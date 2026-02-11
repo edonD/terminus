@@ -1,7 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
 const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
 });
 
 /* ═══════════════════════════════════════════════════
@@ -25,7 +30,7 @@ const SYSTEM_PROMPTS = {
 
 export async function POST(request) {
     try {
-        const { action, input, context, customPrompt } = await request.json();
+        const { action, input, context, customPrompt, fieldType, fieldContent, chatHistory, model } = await request.json();
 
         if (!action) {
             return Response.json({ error: "Missing action" }, { status: 400 });
@@ -33,12 +38,31 @@ export async function POST(request) {
 
         const systemPrompt = SYSTEM_PROMPTS[action] || SYSTEM_PROMPTS.custom;
 
+        // Build context-aware system addition
+        let fieldContext = "";
+        if (fieldType) {
+            fieldContext = `\n\nYou are currently editing the "${fieldType}" field.`;
+            if (fieldType === "title") fieldContext += " Keep output short and headline-worthy — 1 line only unless asked for multiple options.";
+            if (fieldType === "subtitle") fieldContext += " Keep output to 1-2 concise sentences suitable for a blog subtitle/description.";
+        }
+
+        // Build conversation history context
+        let historyContext = "";
+        if (chatHistory && chatHistory.length > 0) {
+            historyContext = "\n\n--- RECENT CONVERSATION HISTORY ---\n";
+            chatHistory.slice(-5).forEach(h => {
+                historyContext += `User asked: ${h.prompt}\nAssistant wrote: ${h.response}\n---\n`;
+            });
+        }
+
+        const fullSystem = systemPrompt + fieldContext + historyContext;
+
         // Build user message
         let userMessage = "";
         if (action === "custom" && customPrompt) {
             userMessage = customPrompt;
-            if (context) userMessage += `\n\n--- FULL DRAFT FOR CONTEXT ---\n${context}`;
-            if (input) userMessage += `\n\n--- SELECTED TEXT ---\n${input}`;
+            if (fieldContent) userMessage += `\n\n--- CURRENT FIELD (${fieldType || "text"}) ---\n${fieldContent}`;
+            if (context) userMessage += `\n\n--- FULL DOCUMENT (structured) ---\n${context}`;
         } else if (action === "outline" || action === "titles") {
             userMessage = input
                 ? `Topic/Draft: ${input}`
@@ -46,9 +70,9 @@ export async function POST(request) {
                     ? `Based on this draft:\n\n${context}`
                     : "Write about technology and startups";
         } else {
-            userMessage = input || context || "";
+            userMessage = input || fieldContent || context || "";
             if (input && context && input !== context) {
-                userMessage = `Selected text to work with:\n${input}\n\n--- Full draft for context ---\n${context}`;
+                userMessage = `Working on: ${fieldType || "text"} field\n\nSelected text to work with:\n${input}\n\n--- Full document (structured) ---\n${context}`;
             }
         }
 
@@ -56,16 +80,59 @@ export async function POST(request) {
             return Response.json({ error: "No input provided" }, { status: 400 });
         }
 
-        // Stream from Claude
+        const encoder = new TextEncoder();
+
+        // ═══ GPT-5-mini path ═══
+        if (model === "gpt") {
+            const stream = await openai.chat.completions.create({
+                model: "gpt-4.1-mini",
+                max_tokens: 2048,
+                stream: true,
+                messages: [
+                    { role: "system", content: fullSystem },
+                    { role: "user", content: userMessage },
+                ],
+            });
+
+            const readable = new ReadableStream({
+                async start(controller) {
+                    try {
+                        for await (const chunk of stream) {
+                            const text = chunk.choices[0]?.delta?.content;
+                            if (text) {
+                                controller.enqueue(
+                                    encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
+                                );
+                            }
+                        }
+                        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                        controller.close();
+                    } catch (err) {
+                        controller.enqueue(
+                            encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`)
+                        );
+                        controller.close();
+                    }
+                },
+            });
+
+            return new Response(readable, {
+                headers: {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    Connection: "keep-alive",
+                },
+            });
+        }
+
+        // ═══ Claude path (default) ═══
         const stream = anthropic.messages.stream({
             model: "claude-sonnet-4-20250514",
             max_tokens: 2048,
-            system: systemPrompt,
+            system: fullSystem,
             messages: [{ role: "user", content: userMessage }],
         });
 
-        // Convert to a ReadableStream for the browser
-        const encoder = new TextEncoder();
         const readable = new ReadableStream({
             async start(controller) {
                 try {

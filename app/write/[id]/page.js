@@ -31,12 +31,12 @@ const AI_SLASH_COMMANDS = [
    STREAMING HELPER — calls /api/ai or /api/ai/research
    and progressively returns text via a callback
    ═══════════════════════════════════════════════════ */
-async function streamAI({ action, input, context, customPrompt, onChunk, onDone, onError }) {
+async function streamAI({ action, input, context, customPrompt, fieldType, fieldContent, chatHistory, model, onChunk, onDone, onError }) {
     const isResearch = action === "research";
     const url = isResearch ? "/api/ai/research" : "/api/ai";
     const body = isResearch
         ? { topic: input || context, context }
-        : { action, input, context, customPrompt };
+        : { action, input, context, customPrompt, fieldType, fieldContent, chatHistory, model };
 
     try {
         const res = await fetch(url, {
@@ -115,11 +115,13 @@ export default function EditorPage({ params }) {
     const [slashMenu, setSlashMenu] = useState(null);
     const [slashFilter, setSlashFilter] = useState("");
     const [slashIndex, setSlashIndex] = useState(0);
-    const [aiInline, setAiInline] = useState(null);
+    const [aiInline, setAiInline] = useState(null); // { blockId, action, fieldType }
     const [aiLoading, setAiLoading] = useState(false);
     const [aiResult, setAiResult] = useState(null);
     const [aiStreaming, setAiStreaming] = useState("");
     const [customPrompt, setCustomPrompt] = useState("");
+    const [aiModel, setAiModel] = useState("claude"); // "claude" or "gpt"
+    const [aiChatHistory, setAiChatHistory] = useState([]); // [{ role, fieldType, prompt, response }]
     const [showTitleGen, setShowTitleGen] = useState(false);
     const [titleSuggestions, setTitleSuggestions] = useState([]);
     const [titlesLoading, setTitlesLoading] = useState(false);
@@ -128,8 +130,22 @@ export default function EditorPage({ params }) {
     const [detectedTone, setDetectedTone] = useState("conversational");
     const [seoScore, setSeoScore] = useState(72);
     const [dragId, setDragId] = useState(null);
+    const [researchOpen, setResearchOpen] = useState(false);
+    const [researchTopic, setResearchTopic] = useState("");
+    const [researchResult, setResearchResult] = useState("");
+    const [researchStreaming, setResearchStreaming] = useState("");
+    const [researchLoading, setResearchLoading] = useState(false);
+    const [researchQueries, setResearchQueries] = useState([]);
+    const [researchStatus, setResearchStatus] = useState("");
+    const [researchSources, setResearchSources] = useState(0);
 
     const blockRefs = useRef({});
+    const aiInlineRef = useRef(aiInline);
+    const slashMenuRef = useRef(slashMenu);
+
+    // Keep refs in sync for keyboard shortcuts
+    useEffect(() => { aiInlineRef.current = aiInline; }, [aiInline]);
+    useEffect(() => { slashMenuRef.current = slashMenu; }, [slashMenu]);
 
     // Auto-detect tone from content
     useEffect(() => {
@@ -158,6 +174,10 @@ export default function EditorPage({ params }) {
             if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setCmdOpen(o => !o); }
             if ((e.metaKey || e.ctrlKey) && e.key === "t") { e.preventDefault(); generateTitles(); }
             if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); handleSave(); }
+            if (e.key === "Escape") {
+                if (aiInlineRef.current) { setAiInline(null); setAiResult(null); setAiStreaming(""); setAiLoading(false); }
+                // slashMenu ESC is handled at the block level in handleBlockKeyDown
+            }
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
@@ -180,6 +200,33 @@ export default function EditorPage({ params }) {
 
     const getDraftContext = useCallback(() => {
         return [title, subtitle, ...blocks.map(b => b.content)].filter(Boolean).join("\n\n");
+    }, [title, subtitle, blocks]);
+
+    // Build structured doc context with field labels
+    const getStructuredContext = useCallback(() => {
+        const parts = [];
+        if (title) parts.push(`[TITLE]: ${title}`);
+        if (subtitle) parts.push(`[SUBTITLE]: ${subtitle}`);
+        blocks.forEach((b, i) => {
+            if (b.content) parts.push(`[${b.type.toUpperCase()} block ${i + 1}]: ${b.content}`);
+        });
+        return parts.join("\n");
+    }, [title, subtitle, blocks]);
+
+    // Get the field type label for current AI target
+    const getFieldType = useCallback((blockId) => {
+        if (blockId === "__title__") return "title";
+        if (blockId === "__subtitle__") return "subtitle";
+        const block = blocks.find(b => b.id === blockId);
+        return block?.type || "paragraph";
+    }, [blocks]);
+
+    // Get field content for AI target
+    const getFieldContent = useCallback((blockId) => {
+        if (blockId === "__title__") return title;
+        if (blockId === "__subtitle__") return subtitle;
+        const block = blocks.find(b => b.id === blockId);
+        return block?.content || "";
     }, [title, subtitle, blocks]);
 
     const handleSave = () => {
@@ -219,7 +266,28 @@ export default function EditorPage({ params }) {
 
     // Handle block key events
     const handleBlockKeyDown = (e, block) => {
-        if (e.key === "Enter" && !e.shiftKey && block.type !== "code") {
+        // Slash menu navigation (only intercept specific keys)
+        if (slashMenu) {
+            const items = getFilteredSlashCommands();
+            if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, items.length - 1)); return; }
+            if (e.key === "ArrowUp") { e.preventDefault(); setSlashIndex(i => Math.max(i - 1, 0)); return; }
+            if (e.key === "Enter" && items[slashIndex]) {
+                e.preventDefault();
+                executeSlashCommand(items[slashIndex], block.id);
+                return;
+            }
+            if (e.key === "Escape") {
+                e.preventDefault();
+                setSlashMenu(null);
+                setSlashFilter("");
+                return;
+            }
+            // All other keys (typing, Backspace, etc.) fall through to native behavior
+            // handleBlockInput (onChange) manages opening/closing the menu based on content
+        }
+
+        // Normal block key handling (runs whether or not slash menu was open)
+        if (e.key === "Enter" && !e.shiftKey && block.type !== "code" && !slashMenu) {
             e.preventDefault();
             addBlockAfter(block.id);
         }
@@ -227,27 +295,13 @@ export default function EditorPage({ params }) {
             e.preventDefault();
             deleteBlock(block.id);
         }
-        if (e.key === "/" && block.content === "") {
-            setSlashMenu(block.id);
-            setSlashFilter("");
-            setSlashIndex(0);
-        }
-        if (slashMenu) {
-            const items = getFilteredSlashCommands();
-            if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, items.length - 1)); }
-            if (e.key === "ArrowUp") { e.preventDefault(); setSlashIndex(i => Math.max(i - 1, 0)); }
-            if (e.key === "Enter" && items[slashIndex]) {
-                e.preventDefault();
-                executeSlashCommand(items[slashIndex], block.id);
-            }
-            if (e.key === "Escape") setSlashMenu(null);
-        }
     };
 
     const handleBlockInput = (e, block) => {
-        const value = e.target.value || e.target.textContent;
+        const value = e.target.value ?? e.target.textContent ?? "";
         updateBlock(block.id, value);
 
+        // Markdown shortcuts
         if (value === "## ") {
             updateBlock(block.id, "");
             setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "heading", content: "" } : b));
@@ -269,11 +323,18 @@ export default function EditorPage({ params }) {
             addBlockAfter(block.id);
         }
 
-        if (slashMenu && value.startsWith("/")) {
+        // Slash menu: open when value is exactly "/"
+        if (value === "/" && !slashMenu) {
+            setSlashMenu(block.id);
+            setSlashFilter("");
+            setSlashIndex(0);
+        } else if (slashMenu && value.startsWith("/")) {
             setSlashFilter(value);
             setSlashIndex(0);
         } else if (slashMenu && !value.startsWith("/")) {
+            // Closed naturally by deleting the "/"
             setSlashMenu(null);
+            setSlashFilter("");
         }
     };
 
@@ -287,6 +348,11 @@ export default function EditorPage({ params }) {
         setSlashMenu(null);
 
         if (cmd.action) {
+            if (cmd.action === "research") {
+                updateBlock(blockId, "");
+                setResearchOpen(true);
+                return;
+            }
             setAiInline({ blockId, action: cmd.action });
             updateBlock(blockId, "");
             return;
@@ -304,19 +370,25 @@ export default function EditorPage({ params }) {
     };
 
     /* ═══════════════════════════════════════════════════
-       AI EXECUTION — Real Claude streaming
+       AI EXECUTION — Real Claude streaming with history
        ═══════════════════════════════════════════════════ */
     const executeAI = async (action, input) => {
         setAiLoading(true);
         setAiResult(null);
         setAiStreaming("");
 
+        const fieldType = aiInline ? getFieldType(aiInline.blockId) : "paragraph";
+        const fieldContent = aiInline ? getFieldContent(aiInline.blockId) : input;
         let accumulated = "";
 
         await streamAI({
             action,
             input: input || "",
-            context: getDraftContext(),
+            context: getStructuredContext(),
+            fieldType,
+            fieldContent,
+            chatHistory: aiChatHistory.slice(-10), // last 10 interactions
+            model: aiModel,
             onChunk: (text) => {
                 accumulated += text;
                 setAiStreaming(accumulated);
@@ -325,6 +397,14 @@ export default function EditorPage({ params }) {
                 setAiResult(accumulated);
                 setAiStreaming("");
                 setAiLoading(false);
+                // Save to chat history
+                setAiChatHistory(prev => [...prev, {
+                    role: "assistant",
+                    fieldType,
+                    prompt: `[${action}] on ${fieldType}: "${(input || "").substring(0, 100)}"`,
+                    response: accumulated.substring(0, 300),
+                    timestamp: Date.now(),
+                }]);
             },
             onError: (err) => {
                 setAiResult(`Error: ${err}`);
@@ -340,15 +420,21 @@ export default function EditorPage({ params }) {
         setAiResult(null);
         setAiStreaming("");
 
+        const fieldType = aiInline ? getFieldType(aiInline.blockId) : "paragraph";
+        const fieldContent = aiInline ? getFieldContent(aiInline.blockId) : "";
         let accumulated = "";
         const promptText = customPrompt;
         setCustomPrompt("");
 
         await streamAI({
             action: "custom",
-            input: aiInline?.blockId ? blocks.find(b => b.id === aiInline.blockId)?.content || "" : "",
-            context: getDraftContext(),
+            input: fieldContent,
+            context: getStructuredContext(),
             customPrompt: promptText,
+            fieldType,
+            fieldContent,
+            chatHistory: aiChatHistory.slice(-10),
+            model: aiModel,
             onChunk: (text) => {
                 accumulated += text;
                 setAiStreaming(accumulated);
@@ -357,6 +443,13 @@ export default function EditorPage({ params }) {
                 setAiResult(accumulated);
                 setAiStreaming("");
                 setAiLoading(false);
+                setAiChatHistory(prev => [...prev, {
+                    role: "assistant",
+                    fieldType,
+                    prompt: promptText.substring(0, 100),
+                    response: accumulated.substring(0, 300),
+                    timestamp: Date.now(),
+                }]);
             },
             onError: (err) => {
                 setAiResult(`Error: ${err}`);
@@ -368,7 +461,13 @@ export default function EditorPage({ params }) {
 
     const insertAiResult = () => {
         if (!aiResult || !aiInline) return;
-        addBlockAfter(aiInline.blockId, "paragraph", aiResult);
+        if (aiInline.blockId === "__title__") {
+            setTitle(aiResult.trim());
+        } else if (aiInline.blockId === "__subtitle__") {
+            setSubtitle(aiResult.trim());
+        } else {
+            addBlockAfter(aiInline.blockId, "paragraph", aiResult);
+        }
         setAiInline(null);
         setAiResult(null);
     };
@@ -418,6 +517,89 @@ export default function EditorPage({ params }) {
         setBlocks(newBlocks);
     };
     const handleDragEnd = () => setDragId(null);
+
+    /* ═══ REUSABLE AI INLINE PANEL ═══ */
+    const AiInlinePanel = ({ fieldLabel }) => {
+        const fieldType = getFieldType(aiInline?.blockId);
+        const fieldContent = getFieldContent(aiInline?.blockId);
+        return (
+            <div className="ai-inline" style={{ marginBottom: "12px" }}>
+                <div className="ai-inline-header" style={{ justifyContent: "space-between" }}>
+                    <span><span>✦</span> AI Co-Pilot — <strong>{fieldLabel || fieldType}</strong>
+                        {fieldContent ? <span style={{ fontSize: "0.58rem", color: "var(--muted)", marginLeft: "8px" }}>“{fieldContent.substring(0, 60)}{fieldContent.length > 60 ? "…" : ""}”</span> : null}
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <div style={{ display: "flex", borderRadius: "4px", overflow: "hidden", border: "1px solid var(--line-strong)", fontSize: "0.6rem" }}>
+                            <button
+                                onClick={() => setAiModel("claude")}
+                                style={{ padding: "2px 8px", background: aiModel === "claude" ? "var(--accent)" : "transparent", color: aiModel === "claude" ? "#000" : "var(--muted)", border: "none", cursor: "pointer", fontWeight: 600 }}
+                            >Claude</button>
+                            <button
+                                onClick={() => setAiModel("gpt")}
+                                style={{ padding: "2px 8px", background: aiModel === "gpt" ? "var(--accent)" : "transparent", color: aiModel === "gpt" ? "#000" : "var(--muted)", border: "none", cursor: "pointer", fontWeight: 600 }}
+                            >GPT-5-mini</button>
+                        </div>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setAiInline(null); setAiResult(null); setAiStreaming(""); setAiLoading(false); }} style={{ padding: "2px 8px", fontSize: "0.72rem" }}>✕</button>
+                    </div>
+                </div>
+
+                {/* Recent history */}
+                {aiChatHistory.length > 0 && (
+                    <div style={{ marginBottom: "8px", maxHeight: "100px", overflowY: "auto", borderBottom: "1px solid var(--line)", paddingBottom: "8px" }}>
+                        <div style={{ fontSize: "0.56rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Recent</div>
+                        {aiChatHistory.slice(-3).map((h, i) => (
+                            <div key={i} style={{ fontSize: "0.62rem", color: "var(--muted)", padding: "2px 0", display: "flex", gap: "6px" }}>
+                                <span style={{ color: "var(--accent)" }}>✦</span>
+                                <span>{h.prompt} → <em>{h.response.substring(0, 50)}…</em></span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div className="ai-inline-actions">
+                    {AI_SLASH_COMMANDS.map(cmd => (
+                        <button key={cmd.action} className="btn btn-ghost btn-sm" onClick={() => executeAI(cmd.action, fieldContent)} disabled={aiLoading}>{cmd.label}</button>
+                    ))}
+                </div>
+
+                {/* Custom prompt */}
+                <div style={{ marginTop: "10px", display: "flex", gap: "6px" }}>
+                    <input
+                        style={{ flex: 1, padding: "7px 12px", border: "1px solid var(--line-strong)", borderRadius: "6px", background: "var(--bg-0)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "0.72rem", outline: "none", caretColor: "var(--accent)" }}
+                        placeholder="Type a custom prompt… e.g. 'make this more persuasive'"
+                        value={customPrompt}
+                        onChange={e => setCustomPrompt(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); executeCustomAI(); } }}
+                        disabled={aiLoading}
+                        autoFocus
+                    />
+                    <button className="btn btn-primary btn-sm" onClick={executeCustomAI} disabled={aiLoading || !customPrompt.trim()}>⏎</button>
+                </div>
+
+                {/* Streaming */}
+                {aiLoading && (
+                    <div style={{ marginTop: "10px" }}>
+                        <div style={{ color: "var(--accent)", fontSize: "0.68rem", marginBottom: "6px" }}>✦ {aiStreaming ? "Streaming…" : "Thinking…"}</div>
+                        {aiStreaming ? (
+                            <div className="ai-result" style={{ opacity: 0.85 }}>{aiStreaming}<span className="ai-cursor">▊</span></div>
+                        ) : (<><div className="skeleton-line w80" style={{ marginTop: "4px" }} /><div className="skeleton-line w60" /></>)}
+                    </div>
+                )}
+
+                {/* Result */}
+                {aiResult && !aiLoading && (
+                    <div className="ai-result">
+                        {aiResult}
+                        <div className="ai-result-actions">
+                            <button className="btn btn-primary btn-sm" onClick={insertAiResult}>↵ Insert</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => executeAI(aiInline?.action || "rewrite", aiResult)}>↻ Retry</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => { setAiResult(null); setAiInline(null); }}>Dismiss</button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     /* ═══ COMMAND BAR ═══ */
     const CommandBar = () => {
@@ -520,6 +702,219 @@ export default function EditorPage({ params }) {
         );
     };
 
+    /* ═══ RESEARCH AGENT ═══ */
+    const runResearch = async (topic) => {
+        if (!topic.trim()) return;
+        setResearchLoading(true);
+        setResearchResult("");
+        setResearchStreaming("");
+        setResearchQueries([]);
+        setResearchStatus("Starting research…");
+        setResearchSources(0);
+
+        try {
+            const res = await fetch("/api/ai/research", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    topic,
+                    context: getStructuredContext(),
+                    model: aiModel,
+                }),
+            });
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulated = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value);
+                const lines = chunk.split("\n");
+                for (const line of lines) {
+                    if (!line.startsWith("data: ")) continue;
+                    const payload = line.slice(6);
+                    if (payload === "[DONE]") continue;
+                    try {
+                        const data = JSON.parse(payload);
+                        if (data.status) setResearchStatus(data.status);
+                        if (data.queries) setResearchQueries(data.queries);
+                        if (data.sourceCount) setResearchSources(data.sourceCount);
+                        if (data.text) {
+                            accumulated += data.text;
+                            setResearchStreaming(accumulated);
+                        }
+                        if (data.error) {
+                            setResearchResult(`Error: ${data.error}`);
+                            setResearchLoading(false);
+                            return;
+                        }
+                    } catch { /* skip */ }
+                }
+            }
+            setResearchResult(accumulated);
+            setResearchStreaming("");
+            setResearchLoading(false);
+            setResearchStatus("");
+        } catch (err) {
+            setResearchResult(`Error: ${err.message}`);
+            setResearchLoading(false);
+        }
+    };
+
+    const insertResearch = () => {
+        const content = researchResult;
+        if (!content) return;
+        // Split into paragraphs and add as new blocks
+        const paragraphs = content.split("\n\n").filter(Boolean);
+        let lastId = blocks[blocks.length - 1]?.id || "b1";
+        paragraphs.forEach((p) => {
+            const isHeading = p.startsWith("## ") || p.startsWith("# ");
+            const newId = `b${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+            setBlocks(prev => {
+                const idx = prev.findIndex(b => b.id === lastId);
+                const newBlocks = [...prev];
+                newBlocks.splice(idx + 1, 0, {
+                    id: newId,
+                    type: isHeading ? "heading" : "paragraph",
+                    content: isHeading ? p.replace(/^#+\s*/, "").replace(/[📊🏢📈🔥💡🔗]\s*/g, "") : p,
+                });
+                return newBlocks;
+            });
+            lastId = newId;
+        });
+        setResearchOpen(false);
+    };
+
+    const ResearchPanel = () => {
+        if (!researchOpen) return null;
+        const displayContent = researchStreaming || researchResult;
+        return (
+            <div style={{
+                position: "fixed", top: 0, right: 0, bottom: 0, width: "480px", maxWidth: "100vw",
+                background: "var(--bg-1)", borderLeft: "1px solid var(--line)",
+                zIndex: 1000, display: "flex", flexDirection: "column",
+                boxShadow: "-8px 0 32px rgba(0,0,0,0.3)",
+                animation: "slideInRight 0.2s ease-out",
+            }}>
+                {/* Header */}
+                <div style={{
+                    padding: "16px 20px", borderBottom: "1px solid var(--line)",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                    <div>
+                        <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>🔍 Research Agent</div>
+                        <div style={{ fontSize: "0.6rem", color: "var(--muted)", marginTop: "2px" }}>
+                            Multi-query deep search · {aiModel === "gpt" ? "GPT-5-mini" : "Claude"}
+                        </div>
+                    </div>
+                    <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => { setResearchOpen(false); setResearchLoading(false); }}
+                        style={{ padding: "4px 10px", fontSize: "0.8rem" }}
+                    >✕</button>
+                </div>
+
+                {/* Topic input */}
+                <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--line)" }}>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                        <input
+                            style={{
+                                flex: 1, padding: "10px 14px", border: "1px solid var(--line-strong)",
+                                borderRadius: "8px", background: "var(--bg-0)", color: "var(--text)",
+                                fontFamily: "var(--font-mono)", fontSize: "0.76rem", outline: "none",
+                                caretColor: "var(--accent)",
+                            }}
+                            placeholder="What do you want to research?"
+                            value={researchTopic}
+                            onChange={e => setResearchTopic(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); runResearch(researchTopic); } }}
+                            disabled={researchLoading}
+                            autoFocus
+                        />
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => runResearch(researchTopic)}
+                            disabled={researchLoading || !researchTopic.trim()}
+                            style={{ padding: "10px 16px", whiteSpace: "nowrap" }}
+                        >{researchLoading ? "Researching…" : "Search"}</button>
+                    </div>
+                </div>
+
+                {/* Status & Queries */}
+                {(researchStatus || researchQueries.length > 0) && (
+                    <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--line)", fontSize: "0.64rem" }}>
+                        {researchStatus && (
+                            <div style={{ color: "var(--accent)", marginBottom: researchQueries.length ? "8px" : 0, fontWeight: 600 }}>
+                                ⚡ {researchStatus}
+                            </div>
+                        )}
+                        {researchQueries.length > 0 && (
+                            <div style={{ color: "var(--muted)" }}>
+                                <div style={{ textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px", fontSize: "0.56rem" }}>Search queries:</div>
+                                {researchQueries.map((q, i) => (
+                                    <div key={i} style={{ padding: "2px 0" }}>
+                                        <span style={{ color: "var(--accent)", marginRight: "6px" }}>→</span>{q}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {researchSources > 0 && (
+                            <div style={{ marginTop: "6px", color: "var(--text)", fontWeight: 600 }}>
+                                📄 {researchSources} sources found
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Results */}
+                <div style={{
+                    flex: 1, overflowY: "auto", padding: "16px 20px",
+                    fontSize: "0.74rem", lineHeight: 1.7, color: "var(--text)",
+                    fontFamily: "var(--font-mono)",
+                }}>
+                    {!displayContent && !researchLoading && (
+                        <div style={{ color: "var(--muted)", textAlign: "center", paddingTop: "40px", fontSize: "0.68rem" }}>
+                            <div style={{ fontSize: "2rem", marginBottom: "12px" }}>🔍</div>
+                            Enter a topic above to start a deep research session.
+                            <br />The agent will search multiple angles and synthesize findings.
+                        </div>
+                    )}
+                    {researchLoading && !displayContent && (
+                        <div style={{ paddingTop: "20px" }}>
+                            <div className="skeleton-line w80" />
+                            <div className="skeleton-line w60" />
+                            <div className="skeleton-line w80" />
+                            <div className="skeleton-line w40" />
+                        </div>
+                    )}
+                    {displayContent && (
+                        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {displayContent}
+                            {researchStreaming && <span className="ai-cursor">▊</span>}
+                        </div>
+                    )}
+                </div>
+
+                {/* Actions */}
+                {researchResult && !researchLoading && (
+                    <div style={{
+                        padding: "12px 20px", borderTop: "1px solid var(--line)",
+                        display: "flex", gap: "8px", justifyContent: "flex-end",
+                    }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setResearchResult(""); setResearchStreaming(""); setResearchQueries([]); setResearchSources(0); }}>
+                            ↻ New Research
+                        </button>
+                        <button className="btn btn-primary btn-sm" onClick={insertResearch}>
+                            ↵ Insert as Blocks
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     /* ═══ RENDER ═══ */
     return (
         <div className="editor-layout">
@@ -535,6 +930,9 @@ export default function EditorPage({ params }) {
                 <div className="editor-topbar-right">
                     <button className="btn btn-ghost btn-sm" onClick={() => setFocusMode(f => !f)}>
                         {focusMode ? "◉ Focus ON" : "○ Focus"}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setResearchOpen(true)}>
+                        🔍 Research
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={generateTitles} title="⌘T">
                         ✦ Titles
@@ -552,16 +950,33 @@ export default function EditorPage({ params }) {
             <div className="editor-canvas">
                 <input
                     className="editor-title-input"
-                    placeholder="Post title…"
+                    placeholder="Post title… (type / for AI)"
                     value={title}
                     onChange={e => { setTitle(e.target.value); setSaveStatus("unsaved"); }}
+                    onKeyDown={e => {
+                        if (e.key === "/") {
+                            e.preventDefault();
+                            setAiInline({ blockId: "__title__", action: null, fieldType: "title" });
+                        }
+                    }}
                 />
+                {/* AI panel for title */}
+                {aiInline && aiInline.blockId === "__title__" && <AiInlinePanel fieldLabel="Title" />}
+
                 <input
                     className="editor-subtitle-input"
-                    placeholder="Add a subtitle…"
+                    placeholder="Add a subtitle… (type / for AI)"
                     value={subtitle}
                     onChange={e => { setSubtitle(e.target.value); setSaveStatus("unsaved"); }}
+                    onKeyDown={e => {
+                        if (e.key === "/") {
+                            e.preventDefault();
+                            setAiInline({ blockId: "__subtitle__", action: null, fieldType: "subtitle" });
+                        }
+                    }}
                 />
+                {/* AI panel for subtitle */}
+                {aiInline && aiInline.blockId === "__subtitle__" && <AiInlinePanel fieldLabel="Subtitle" />}
 
                 {/* Blocks */}
                 {blocks.map((block) => (
@@ -636,7 +1051,10 @@ export default function EditorPage({ params }) {
                         {/* Slash command menu */}
                         {slashMenu === block.id && (
                             <div className="slash-menu">
-                                <div className="slash-menu-title">Commands</div>
+                                <div className="slash-menu-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span>Commands</span>
+                                    <button onClick={() => setSlashMenu(null)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.72rem", padding: "0 4px" }}>✕</button>
+                                </div>
                                 {getFilteredSlashCommands().map((cmd, i) => (
                                     <div
                                         key={cmd.cmd || cmd.label}
@@ -652,89 +1070,7 @@ export default function EditorPage({ params }) {
                         )}
 
                         {/* AI inline prompt */}
-                        {aiInline && aiInline.blockId === block.id && (
-                            <div className="ai-inline">
-                                <div className="ai-inline-header">
-                                    <span>✦</span> AI Co-Pilot <span style={{ fontSize: "0.58rem", color: "var(--muted)", marginLeft: "8px" }}>powered by Claude</span>
-                                </div>
-                                <div className="ai-inline-actions">
-                                    {AI_SLASH_COMMANDS.map(cmd => (
-                                        <button
-                                            key={cmd.action}
-                                            className="btn btn-ghost btn-sm"
-                                            onClick={() => executeAI(cmd.action, block.content)}
-                                            disabled={aiLoading}
-                                        >
-                                            {cmd.label}
-                                        </button>
-                                    ))}
-                                </div>
-
-                                {/* Custom prompt input */}
-                                <div style={{ marginTop: "10px", display: "flex", gap: "6px" }}>
-                                    <input
-                                        style={{
-                                            flex: 1,
-                                            padding: "7px 12px",
-                                            border: "1px solid var(--line-strong)",
-                                            borderRadius: "6px",
-                                            background: "var(--bg-0)",
-                                            color: "var(--text)",
-                                            fontFamily: "var(--font-mono)",
-                                            fontSize: "0.72rem",
-                                            outline: "none",
-                                            caretColor: "var(--accent)",
-                                        }}
-                                        placeholder="Or type a custom prompt… e.g. 'make this more persuasive'"
-                                        value={customPrompt}
-                                        onChange={e => setCustomPrompt(e.target.value)}
-                                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); executeCustomAI(); } }}
-                                        disabled={aiLoading}
-                                    />
-                                    <button className="btn btn-primary btn-sm" onClick={executeCustomAI} disabled={aiLoading || !customPrompt.trim()}>
-                                        ⏎
-                                    </button>
-                                </div>
-
-                                {/* Streaming indicator */}
-                                {aiLoading && (
-                                    <div style={{ marginTop: "10px" }}>
-                                        <div style={{ color: "var(--accent)", fontSize: "0.68rem", marginBottom: "6px" }}>
-                                            ✦ {aiStreaming ? "Streaming…" : "Thinking…"}
-                                        </div>
-                                        {aiStreaming ? (
-                                            <div className="ai-result" style={{ opacity: 0.85 }}>
-                                                {aiStreaming}
-                                                <span className="ai-cursor">▊</span>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <div className="skeleton-line w80" style={{ marginTop: "4px" }} />
-                                                <div className="skeleton-line w60" />
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Final result */}
-                                {aiResult && !aiLoading && (
-                                    <div className="ai-result">
-                                        {aiResult}
-                                        <div className="ai-result-actions">
-                                            <button className="btn btn-primary btn-sm" onClick={insertAiResult}>
-                                                ↵ Insert
-                                            </button>
-                                            <button className="btn btn-ghost btn-sm" onClick={() => executeAI(aiInline.action || "rewrite", aiResult)}>
-                                                ↻ Retry
-                                            </button>
-                                            <button className="btn btn-ghost btn-sm" onClick={() => { setAiResult(null); setAiInline(null); }}>
-                                                Dismiss
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                        {aiInline && aiInline.blockId === block.id && <AiInlinePanel fieldLabel={block.type} />}
                     </div>
                 ))}
             </div>
@@ -763,6 +1099,7 @@ export default function EditorPage({ params }) {
 
             <CommandBar />
             <TitleGenModal />
+            <ResearchPanel />
         </div>
     );
 }

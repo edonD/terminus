@@ -1190,6 +1190,12 @@ a {
   flex-direction: column;
 }
 
+/* Hide grain + glow animations inside the editor */
+body:has(.editor-layout)::before,
+body:has(.editor-layout)::after {
+  display: none;
+}
+
 .editor-topbar {
   display: flex;
   align-items: center;
@@ -1842,6 +1848,18 @@ a {
 
   .cmd-trigger {
     display: none;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
