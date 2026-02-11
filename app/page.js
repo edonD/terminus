@@ -211,6 +211,20 @@ export default function HomePage() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [subscribed, setSubscribed] = useState(false);
+
+  const handleSubscribe = (e) => {
+    e.preventDefault();
+    if (!email || !email.includes("@")) return;
+    const subs = JSON.parse(localStorage.getItem("terminus_subs") || "[]");
+    if (!subs.includes(email)) {
+      subs.push(email);
+      localStorage.setItem("terminus_subs", JSON.stringify(subs));
+    }
+    setSubscribed(true);
+    setEmail("");
+  };
 
   // ⌘K global shortcut
   useEffect(() => {
@@ -244,7 +258,7 @@ export default function HomePage() {
         </Link>
         <nav className="topbar-nav">
           <Link href="/" className="active">Blog</Link>
-          <a href="https://github.com/edonD" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://x.com/edon_d" target="_blank" rel="noopener">X</a>
           <a href="mailto:hello@terminus.blog">Contact</a>
         </nav>
       </header>
@@ -286,6 +300,31 @@ export default function HomePage() {
             </button>
           </div>
         )}
+      </section>
+
+      {/* ── Subscribe ── */}
+      <section className="subscribe-section">
+        <div className="subscribe-box">
+          <span className="subscribe-icon">◉</span>
+          <h3>Get new posts delivered to your inbox</h3>
+          <p>No spam. Unsubscribe anytime. Just signal.</p>
+          {subscribed ? (
+            <div className="subscribe-success">
+              <span>✓</span> You're in. Welcome to the terminal.
+            </div>
+          ) : (
+            <form className="subscribe-form" onSubmit={handleSubscribe}>
+              <input
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <button type="submit" className="btn btn-primary btn-sm">Subscribe</button>
+            </form>
+          )}
+        </div>
       </section>
 
       {/* ── Footer ── */}

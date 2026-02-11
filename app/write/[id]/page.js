@@ -4,29 +4,10 @@ import { useState, useEffect, useRef, useCallback, use } from "react";
 import Link from "next/link";
 
 /* ═══════════════════════════════════════════════════
-   AI CO-PILOT — Simulated responses
+   TONE & SLASH COMMAND DEFINITIONS
    ═══════════════════════════════════════════════════ */
-const AI_RESPONSES = {
-    continue: (text) => `Furthermore, this approach enables teams to iterate faster while maintaining the structural integrity of their systems. The key insight is that complexity should be managed, not avoided — and the tools we build should reflect that philosophy.`,
-    rewrite: (text) => `${text.split(" ").slice(0, 3).join(" ")} — reimagined: The core thesis remains unchanged, but the framing shifts from defensive to assertive. Instead of explaining why this matters, we demonstrate it through evidence.`,
-    shorter: (text) => text.split(". ").slice(0, Math.ceil(text.split(". ").length / 2)).join(". ") + ".",
-    longer: (text) => `${text}\n\nTo elaborate further: this pattern has been observed across multiple domains — from financial infrastructure to developer tooling. The companies that recognize this shift early gain a compounding advantage that becomes nearly impossible to replicate.`,
-    outline: (topic) => `## Outline: ${topic}\n\n1. **Introduction** — Frame the problem\n2. **The Current State** — What exists today and why it falls short\n3. **The Shift** — What's changing and why now\n4. **Technical Deep Dive** — How it works under the hood\n5. **Implications** — What this means for builders\n6. **Conclusion** — The call to action`,
-    research: (topic) => `## Research: ${topic}\n\nBased on recent analysis:\n\n- Market size estimated at $4.2B by 2028 (CAGR 23%)\n- Key players: Stripe, Adyen, Circle, Fipto\n- Regulatory tailwind from MiCA (effective 2025)\n- 67% of enterprise treasuries exploring stablecoin rails¹\n\n¹ Source: McKinsey Digital Payments Report, 2025`,
-};
-
 const TONE_OPTIONS = ["formal", "conversational", "technical", "persuasive"];
-const TITLE_SUGGESTIONS = [
-    "Why This Changes Everything for Builders",
-    "The Infrastructure Nobody Is Talking About",
-    "A First-Principles Look at What's Next",
-    "The Contrarian Case for Moving Now",
-    "What I Wish I Knew Before Starting",
-];
 
-/* ═══════════════════════════════════════════════════
-   SLASH COMMAND DEFINITIONS
-   ═══════════════════════════════════════════════════ */
 const SLASH_COMMANDS = [
     { cmd: "/h1", label: "Heading 1", icon: "H1", type: "heading" },
     { cmd: "/h2", label: "Heading 2", icon: "H2", type: "heading-h3" },
@@ -45,6 +26,68 @@ const AI_SLASH_COMMANDS = [
     { cmd: "/ai outline", label: "Generate outline", action: "outline" },
     { cmd: "/ai research", label: "Research topic", action: "research" },
 ];
+
+/* ═══════════════════════════════════════════════════
+   STREAMING HELPER — calls /api/ai or /api/ai/research
+   and progressively returns text via a callback
+   ═══════════════════════════════════════════════════ */
+async function streamAI({ action, input, context, customPrompt, onChunk, onDone, onError }) {
+    const isResearch = action === "research";
+    const url = isResearch ? "/api/ai/research" : "/api/ai";
+    const body = isResearch
+        ? { topic: input || context, context }
+        : { action, input, context, customPrompt };
+
+    try {
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: "Unknown error" }));
+            onError(err.error || `HTTP ${res.status}`);
+            return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const payload = line.slice(6).trim();
+                    if (payload === "[DONE]") {
+                        onDone();
+                        return;
+                    }
+                    try {
+                        const data = JSON.parse(payload);
+                        if (data.error) {
+                            onError(data.error);
+                            return;
+                        }
+                        if (data.text) {
+                            onChunk(data.text);
+                        }
+                    } catch { /* skip non-JSON lines */ }
+                }
+            }
+        }
+        onDone();
+    } catch (err) {
+        onError(err.message);
+    }
+}
 
 /* ═══════════════════════════════════════════════════
    EDITOR PAGE COMPONENT
@@ -75,7 +118,11 @@ export default function EditorPage({ params }) {
     const [aiInline, setAiInline] = useState(null);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiResult, setAiResult] = useState(null);
+    const [aiStreaming, setAiStreaming] = useState("");
+    const [customPrompt, setCustomPrompt] = useState("");
     const [showTitleGen, setShowTitleGen] = useState(false);
+    const [titleSuggestions, setTitleSuggestions] = useState([]);
+    const [titlesLoading, setTitlesLoading] = useState(false);
     const [cmdOpen, setCmdOpen] = useState(false);
     const [saveStatus, setSaveStatus] = useState("saved");
     const [detectedTone, setDetectedTone] = useState("conversational");
@@ -109,7 +156,7 @@ export default function EditorPage({ params }) {
     useEffect(() => {
         const handler = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setCmdOpen(o => !o); }
-            if ((e.metaKey || e.ctrlKey) && e.key === "t") { e.preventDefault(); setShowTitleGen(true); }
+            if ((e.metaKey || e.ctrlKey) && e.key === "t") { e.preventDefault(); generateTitles(); }
             if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); handleSave(); }
         };
         window.addEventListener("keydown", handler);
@@ -130,6 +177,10 @@ export default function EditorPage({ params }) {
         const mins = Math.max(1, Math.ceil(words / 250));
         return `${mins} min`;
     }, [getWordCount]);
+
+    const getDraftContext = useCallback(() => {
+        return [title, subtitle, ...blocks.map(b => b.content)].filter(Boolean).join("\n\n");
+    }, [title, subtitle, blocks]);
 
     const handleSave = () => {
         setSaveStatus("saving");
@@ -168,26 +219,19 @@ export default function EditorPage({ params }) {
 
     // Handle block key events
     const handleBlockKeyDown = (e, block) => {
-        // Enter: create new block
         if (e.key === "Enter" && !e.shiftKey && block.type !== "code") {
             e.preventDefault();
             addBlockAfter(block.id);
         }
-
-        // Backspace on empty: delete block
         if (e.key === "Backspace" && block.content === "" && blocks.length > 1) {
             e.preventDefault();
             deleteBlock(block.id);
         }
-
-        // Slash at start: show menu
         if (e.key === "/" && block.content === "") {
             setSlashMenu(block.id);
             setSlashFilter("");
             setSlashIndex(0);
         }
-
-        // Arrow navigation for slash menu
         if (slashMenu) {
             const items = getFilteredSlashCommands();
             if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, items.length - 1)); }
@@ -204,7 +248,6 @@ export default function EditorPage({ params }) {
         const value = e.target.value || e.target.textContent;
         updateBlock(block.id, value);
 
-        // Markdown shortcuts
         if (value === "## ") {
             updateBlock(block.id, "");
             setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "heading", content: "" } : b));
@@ -226,7 +269,6 @@ export default function EditorPage({ params }) {
             addBlockAfter(block.id);
         }
 
-        // Slash command filter
         if (slashMenu && value.startsWith("/")) {
             setSlashFilter(value);
             setSlashIndex(0);
@@ -245,7 +287,6 @@ export default function EditorPage({ params }) {
         setSlashMenu(null);
 
         if (cmd.action) {
-            // AI command
             setAiInline({ blockId, action: cmd.action });
             updateBlock(blockId, "");
             return;
@@ -262,23 +303,106 @@ export default function EditorPage({ params }) {
         }
     };
 
-    // AI execution
+    /* ═══════════════════════════════════════════════════
+       AI EXECUTION — Real Claude streaming
+       ═══════════════════════════════════════════════════ */
     const executeAI = async (action, input) => {
         setAiLoading(true);
         setAiResult(null);
-        // Simulate API delay
-        await new Promise(r => setTimeout(r, 1200));
-        const fn = AI_RESPONSES[action];
-        const result = fn ? fn(input || blocks.map(b => b.content).join(" ")) : "AI feature not available yet.";
-        setAiResult(result);
-        setAiLoading(false);
+        setAiStreaming("");
+
+        let accumulated = "";
+
+        await streamAI({
+            action,
+            input: input || "",
+            context: getDraftContext(),
+            onChunk: (text) => {
+                accumulated += text;
+                setAiStreaming(accumulated);
+            },
+            onDone: () => {
+                setAiResult(accumulated);
+                setAiStreaming("");
+                setAiLoading(false);
+            },
+            onError: (err) => {
+                setAiResult(`Error: ${err}`);
+                setAiStreaming("");
+                setAiLoading(false);
+            },
+        });
+    };
+
+    const executeCustomAI = async () => {
+        if (!customPrompt.trim()) return;
+        setAiLoading(true);
+        setAiResult(null);
+        setAiStreaming("");
+
+        let accumulated = "";
+        const promptText = customPrompt;
+        setCustomPrompt("");
+
+        await streamAI({
+            action: "custom",
+            input: aiInline?.blockId ? blocks.find(b => b.id === aiInline.blockId)?.content || "" : "",
+            context: getDraftContext(),
+            customPrompt: promptText,
+            onChunk: (text) => {
+                accumulated += text;
+                setAiStreaming(accumulated);
+            },
+            onDone: () => {
+                setAiResult(accumulated);
+                setAiStreaming("");
+                setAiLoading(false);
+            },
+            onError: (err) => {
+                setAiResult(`Error: ${err}`);
+                setAiStreaming("");
+                setAiLoading(false);
+            },
+        });
     };
 
     const insertAiResult = () => {
         if (!aiResult || !aiInline) return;
-        const newId = addBlockAfter(aiInline.blockId, "paragraph", aiResult);
+        addBlockAfter(aiInline.blockId, "paragraph", aiResult);
         setAiInline(null);
         setAiResult(null);
+    };
+
+    /* ═══════════════════════════════════════════════════
+       TITLE GENERATOR — Real Claude API
+       ═══════════════════════════════════════════════════ */
+    const generateTitles = async () => {
+        setShowTitleGen(true);
+        setTitlesLoading(true);
+        setTitleSuggestions([]);
+
+        let accumulated = "";
+
+        await streamAI({
+            action: "titles",
+            input: title || "",
+            context: getDraftContext(),
+            onChunk: (text) => {
+                accumulated += text;
+                // Parse numbered lines in real-time
+                const lines = accumulated.split("\n").filter(l => /^\d+[\.\)]/.test(l.trim()));
+                setTitleSuggestions(lines.map(l => l.replace(/^\d+[\.\)]\s*/, "").trim()));
+            },
+            onDone: () => {
+                const lines = accumulated.split("\n").filter(l => /^\d+[\.\)]/.test(l.trim()));
+                setTitleSuggestions(lines.map(l => l.replace(/^\d+[\.\)]\s*/, "").trim()));
+                setTitlesLoading(false);
+            },
+            onError: (err) => {
+                setTitleSuggestions([`Error: ${err}`]);
+                setTitlesLoading(false);
+            },
+        });
     };
 
     // Drag and drop
@@ -360,7 +484,7 @@ export default function EditorPage({ params }) {
         );
     };
 
-    /* ═══ TITLE GENERATOR MODAL ═══ */
+    /* ═══ TITLE GENERATOR MODAL — Real AI ═══ */
     const TitleGenModal = () => {
         if (!showTitleGen) return null;
         return (
@@ -368,16 +492,28 @@ export default function EditorPage({ params }) {
                 <div className="title-gen-box" onClick={e => e.stopPropagation()}>
                     <h3>✦ AI Title Generator</h3>
                     <p style={{ fontSize: "0.68rem", color: "var(--muted)", marginBottom: "16px" }}>
-                        Based on your draft, here are 5 title options ranked by click-worthiness:
+                        {titlesLoading
+                            ? "Generating titles from your draft with Claude…"
+                            : "Click a title to use it:"}
                     </p>
-                    {TITLE_SUGGESTIONS.map((t, i) => (
+                    {titlesLoading && titleSuggestions.length === 0 && (
+                        <div style={{ padding: "12px 0" }}>
+                            <div className="skeleton-line w80" />
+                            <div className="skeleton-line w60" />
+                            <div className="skeleton-line w80" />
+                        </div>
+                    )}
+                    {titleSuggestions.map((t, i) => (
                         <div key={i} className="title-option" onClick={() => { setTitle(t); setShowTitleGen(false); }}>
                             <span className="rank">#{i + 1}</span>
                             {t}
                         </div>
                     ))}
-                    <div style={{ marginTop: "12px", textAlign: "right" }}>
+                    <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between" }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => setShowTitleGen(false)}>Cancel</button>
+                        {!titlesLoading && (
+                            <button className="btn btn-ghost btn-sm" onClick={generateTitles}>↻ Regenerate</button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -400,7 +536,7 @@ export default function EditorPage({ params }) {
                     <button className="btn btn-ghost btn-sm" onClick={() => setFocusMode(f => !f)}>
                         {focusMode ? "◉ Focus ON" : "○ Focus"}
                     </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setShowTitleGen(true)} title="⌘T">
+                    <button className="btn btn-ghost btn-sm" onClick={generateTitles} title="⌘T">
                         ✦ Titles
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={() => setCmdOpen(true)}>
@@ -519,7 +655,7 @@ export default function EditorPage({ params }) {
                         {aiInline && aiInline.blockId === block.id && (
                             <div className="ai-inline">
                                 <div className="ai-inline-header">
-                                    <span>✦</span> AI Co-Pilot
+                                    <span>✦</span> AI Co-Pilot <span style={{ fontSize: "0.58rem", color: "var(--muted)", marginLeft: "8px" }}>powered by Claude</span>
                                 </div>
                                 <div className="ai-inline-actions">
                                     {AI_SLASH_COMMANDS.map(cmd => (
@@ -533,19 +669,63 @@ export default function EditorPage({ params }) {
                                         </button>
                                     ))}
                                 </div>
+
+                                {/* Custom prompt input */}
+                                <div style={{ marginTop: "10px", display: "flex", gap: "6px" }}>
+                                    <input
+                                        style={{
+                                            flex: 1,
+                                            padding: "7px 12px",
+                                            border: "1px solid var(--line-strong)",
+                                            borderRadius: "6px",
+                                            background: "var(--bg-0)",
+                                            color: "var(--text)",
+                                            fontFamily: "var(--font-mono)",
+                                            fontSize: "0.72rem",
+                                            outline: "none",
+                                            caretColor: "var(--accent)",
+                                        }}
+                                        placeholder="Or type a custom prompt… e.g. 'make this more persuasive'"
+                                        value={customPrompt}
+                                        onChange={e => setCustomPrompt(e.target.value)}
+                                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); executeCustomAI(); } }}
+                                        disabled={aiLoading}
+                                    />
+                                    <button className="btn btn-primary btn-sm" onClick={executeCustomAI} disabled={aiLoading || !customPrompt.trim()}>
+                                        ⏎
+                                    </button>
+                                </div>
+
+                                {/* Streaming indicator */}
                                 {aiLoading && (
-                                    <div style={{ marginTop: "10px", color: "var(--accent)", fontSize: "0.72rem" }}>
-                                        ✦ Generating…
-                                        <div className="skeleton-line w80" style={{ marginTop: "8px" }} />
-                                        <div className="skeleton-line w60" />
+                                    <div style={{ marginTop: "10px" }}>
+                                        <div style={{ color: "var(--accent)", fontSize: "0.68rem", marginBottom: "6px" }}>
+                                            ✦ {aiStreaming ? "Streaming…" : "Thinking…"}
+                                        </div>
+                                        {aiStreaming ? (
+                                            <div className="ai-result" style={{ opacity: 0.85 }}>
+                                                {aiStreaming}
+                                                <span className="ai-cursor">▊</span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="skeleton-line w80" style={{ marginTop: "4px" }} />
+                                                <div className="skeleton-line w60" />
+                                            </>
+                                        )}
                                     </div>
                                 )}
-                                {aiResult && (
+
+                                {/* Final result */}
+                                {aiResult && !aiLoading && (
                                     <div className="ai-result">
                                         {aiResult}
                                         <div className="ai-result-actions">
                                             <button className="btn btn-primary btn-sm" onClick={insertAiResult}>
                                                 ↵ Insert
+                                            </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => executeAI(aiInline.action || "rewrite", aiResult)}>
+                                                ↻ Retry
                                             </button>
                                             <button className="btn btn-ghost btn-sm" onClick={() => { setAiResult(null); setAiInline(null); }}>
                                                 Dismiss
