@@ -200,7 +200,7 @@ export default function PostPage({ params }) {
                 </Link>
                 <nav className="topbar-nav">
                     <Link href="/">Blog</Link>
-                    <Link href="/write">Write</Link>
+                    <a href="https://github.com/edonD" target="_blank" rel="noopener">GitHub</a>
                 </nav>
             </header>
 

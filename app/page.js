@@ -244,17 +244,14 @@ export default function HomePage() {
         </Link>
         <nav className="topbar-nav">
           <Link href="/" className="active">Blog</Link>
-          <Link href="/write">Write</Link>
-          <Link href="/write">Dashboard</Link>
-          <button className="cmd-trigger" onClick={() => setCmdOpen(true)}>
-            Command <kbd>⌘K</kbd>
-          </button>
+          <a href="https://github.com/edonD" target="_blank" rel="noopener">GitHub</a>
+          <a href="mailto:hello@terminus.blog">Contact</a>
         </nav>
       </header>
 
       {/* ── Hero ── */}
       <section className="hero-landing">
-        <p className="hero-kicker">Personal Command Center</p>
+        <p className="hero-kicker">Written by Edon</p>
         <h1 className="hero-title">
           Thoughts on building<br />
           the future<span className="cursor">_</span>
@@ -263,10 +260,6 @@ export default function HomePage() {
           Engineering, fintech, AI, and the raw lessons from building products
           that matter. No fluff — just signal.
         </p>
-        <div className="hero-actions">
-          <Link href="/write/new" className="btn btn-primary">✦ New Post</Link>
-          <Link href="/write" className="btn">◉ Dashboard</Link>
-        </div>
       </section>
 
       {/* ── Posts ── */}
