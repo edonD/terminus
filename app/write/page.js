@@ -103,6 +103,7 @@ export default function WriteDashboard() {
     const [sortKey, setSortKey] = useState("lastEdited");
     const [sortDir, setSortDir] = useState("desc");
     const [cmdOpen, setCmdOpen] = useState(false);
+    const [filter, setFilter] = useState("all");
 
     useEffect(() => {
         const handler = (e) => {
@@ -119,6 +120,7 @@ export default function WriteDashboard() {
 
     const filteredPosts = useMemo(() => {
         let result = [...POSTS];
+        if (filter !== "all") result = result.filter(p => p.status === filter);
         if (searchQuery) {
             result = result.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()));
         }
@@ -131,13 +133,12 @@ export default function WriteDashboard() {
             return 0;
         });
         return result;
-    }, [searchQuery, sortKey, sortDir]);
+    }, [searchQuery, sortKey, sortDir, filter]);
 
     const totalViews = POSTS.reduce((s, p) => s + p.views, 0);
     const publishedCount = POSTS.filter(p => p.status === "published").length;
     const draftCount = POSTS.filter(p => p.status === "draft").length;
 
-    // Generate random sparkline data for each post
     const sparkData = useMemo(() => {
         const data = {};
         POSTS.forEach(p => {
@@ -147,96 +148,169 @@ export default function WriteDashboard() {
     }, []);
 
     return (
-        <div className="dashboard-layout">
-            {/* Sidebar */}
-            <aside className="sidebar">
-                <div className="sidebar-brand">◉ TERMINUS</div>
-                <Link href="/" className="sidebar-link">◇ Blog</Link>
-                <Link href="/write" className="sidebar-link active">▦ Dashboard</Link>
-                <Link href="/write/new" className="sidebar-link">✦ New Post</Link>
-                <div className="sidebar-spacer" />
-                <button className="sidebar-link" onClick={() => setCmdOpen(true)} style={{ border: "none", background: "none", cursor: "pointer", textAlign: "left", width: "100%" }}>
-                    ⌘ Command Bar
-                </button>
-                <div className="sidebar-footer">TERMINUS · Edon</div>
-            </aside>
-
-            {/* Main */}
-            <main className="dash-main">
-                <div className="dash-header">
-                    <h1>Dashboard</h1>
-                    <Link href="/write/new" className="btn btn-primary btn-sm">✦ New Post</Link>
+        <div className="dash-shell">
+            {/* ── Topbar ── */}
+            <header className="dash-topbar">
+                <div className="dash-topbar-left">
+                    <Link href="/" className="dash-brand">
+                        <span className="dash-brand-dot" />
+                        TERMINUS
+                    </Link>
+                    <span className="dash-divider" />
+                    <span className="dash-label">Writer</span>
                 </div>
-
-                {/* Stats */}
-                <div className="stat-row">
-                    <div className="stat-card">
-                        <div className="stat-label">Total Posts</div>
-                        <div className="stat-value">{POSTS.length}</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-label">Published</div>
-                        <div className="stat-value">{publishedCount}</div>
-                        <div className="stat-delta">● live</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-label">Drafts</div>
-                        <div className="stat-value">{draftCount}</div>
-                    </div>
-                    <div className="stat-card">
-                        <div className="stat-label">Total Views</div>
-                        <div className="stat-value">{totalViews.toLocaleString()}</div>
-                        <div className="stat-delta">↑ 12% this week</div>
-                    </div>
+                <div className="dash-topbar-right">
+                    <nav className="dash-nav">
+                        <Link href="/" className="dash-nav-link">Blog</Link>
+                        <Link href="/write" className="dash-nav-link active">Dashboard</Link>
+                    </nav>
+                    <button className="cmd-trigger" onClick={() => setCmdOpen(true)}>
+                        <span>⌘K</span>
+                    </button>
+                    <Link href="/write/new" className="btn btn-primary btn-sm">
+                        ✦ New Post
+                    </Link>
                 </div>
+            </header>
 
-                {/* Post Table */}
-                <div className="post-table-wrap">
-                    <div className="post-table-header">
-                        <h3>All Posts</h3>
-                        <input
-                            className="post-table-search"
-                            placeholder="Search posts…"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
+            <main className="dash-content">
+                {/* ── Stats ── */}
+                <section className="dash-stats">
+                    <div className="dash-stat-card">
+                        <div className="dash-stat-icon">📄</div>
+                        <div>
+                            <div className="dash-stat-value">{POSTS.length}</div>
+                            <div className="dash-stat-label">Total Posts</div>
+                        </div>
                     </div>
-                    <table className="post-table">
-                        <thead>
-                            <tr>
-                                <th onClick={() => handleSort("title")} style={{ width: "40%" }}>
-                                    Title {sortKey === "title" ? (sortDir === "asc" ? "↑" : "↓") : ""}
-                                </th>
-                                <th onClick={() => handleSort("status")} style={{ width: "12%" }}>
-                                    Status {sortKey === "status" ? (sortDir === "asc" ? "↑" : "↓") : ""}
-                                </th>
-                                <th onClick={() => handleSort("views")} style={{ width: "12%" }}>
-                                    Views {sortKey === "views" ? (sortDir === "asc" ? "↑" : "↓") : ""}
-                                </th>
-                                <th style={{ width: "12%" }}>Trend</th>
-                                <th style={{ width: "10%" }}>Read Time</th>
-                                <th onClick={() => handleSort("lastEdited")} style={{ width: "14%" }}>
-                                    Edited {sortKey === "lastEdited" ? (sortDir === "asc" ? "↑" : "↓") : ""}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredPosts.map((post) => (
-                                <tr key={post.id} onClick={() => window.location.href = `/write/${post.id}`}>
-                                    <td style={{ fontWeight: 500, color: "var(--text)" }}>{post.title}</td>
-                                    <td>
-                                        <span className={`status-dot ${post.status}`} />
-                                        {post.status === "published" ? "Published" : "Draft"}
-                                    </td>
-                                    <td>{post.views > 0 ? post.views.toLocaleString() : "—"}</td>
-                                    <td>{post.views > 0 ? <Sparkline data={sparkData[post.id]} /> : "—"}</td>
-                                    <td>{post.readTime}</td>
-                                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "0.68rem" }}>{post.lastEdited}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                    <div className="dash-stat-card">
+                        <div className="dash-stat-icon">●</div>
+                        <div>
+                            <div className="dash-stat-value">{publishedCount}</div>
+                            <div className="dash-stat-label">Published</div>
+                        </div>
+                    </div>
+                    <div className="dash-stat-card">
+                        <div className="dash-stat-icon">◌</div>
+                        <div>
+                            <div className="dash-stat-value">{draftCount}</div>
+                            <div className="dash-stat-label">Drafts</div>
+                        </div>
+                    </div>
+                    <div className="dash-stat-card accent-glow">
+                        <div className="dash-stat-icon">👁</div>
+                        <div>
+                            <div className="dash-stat-value">{totalViews.toLocaleString()}</div>
+                            <div className="dash-stat-label">Total Views</div>
+                            <div className="dash-stat-delta">↑ 12% this week</div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* ── Quick Actions ── */}
+                <section className="dash-quick-actions">
+                    <Link href="/write/new" className="dash-quick-card">
+                        <div className="dash-quick-icon">✦</div>
+                        <div className="dash-quick-label">New Post</div>
+                        <p>Start with a blank canvas or pick a template.</p>
+                    </Link>
+                    <Link href="/write/new" className="dash-quick-card">
+                        <div className="dash-quick-icon">◈</div>
+                        <div className="dash-quick-label">Deep Analysis</div>
+                        <p>Research a topic with AI, then auto-generate a draft.</p>
+                    </Link>
+                    <button className="dash-quick-card" onClick={() => setCmdOpen(true)}>
+                        <div className="dash-quick-icon">⌘</div>
+                        <div className="dash-quick-label">Command Bar</div>
+                        <p>Quick access to all actions. Press ⌘K anytime.</p>
+                    </button>
+                </section>
+
+                {/* ── Post List ── */}
+                <section className="dash-posts-section">
+                    <div className="dash-posts-header">
+                        <div className="dash-posts-title-row">
+                            <h2>All Posts</h2>
+                            <span className="dash-posts-count">{filteredPosts.length} of {POSTS.length}</span>
+                        </div>
+                        <div className="dash-posts-controls">
+                            <div className="dash-filter-tabs">
+                                {[
+                                    { key: "all", label: "All" },
+                                    { key: "published", label: "Published" },
+                                    { key: "draft", label: "Drafts" },
+                                ].map(tab => (
+                                    <button
+                                        key={tab.key}
+                                        className={`dash-filter-tab ${filter === tab.key ? "active" : ""}`}
+                                        onClick={() => setFilter(tab.key)}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <input
+                                className="dash-search"
+                                placeholder="Search posts…"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="dash-sort-bar">
+                        {[
+                            { key: "title", label: "Title" },
+                            { key: "views", label: "Views" },
+                            { key: "lastEdited", label: "Edited" },
+                        ].map(col => (
+                            <button
+                                key={col.key}
+                                className={`dash-sort-btn ${sortKey === col.key ? "active" : ""}`}
+                                onClick={() => handleSort(col.key)}
+                            >
+                                {col.label} {sortKey === col.key ? (sortDir === "asc" ? "↑" : "↓") : ""}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="dash-post-list">
+                        {filteredPosts.map((post) => (
+                            <Link
+                                key={post.id}
+                                href={`/write/${post.id}`}
+                                className="dash-post-card"
+                            >
+                                <div className="dash-post-card-main">
+                                    <div className="dash-post-status">
+                                        <span className={`dash-status-dot ${post.status}`} />
+                                    </div>
+                                    <div className="dash-post-info">
+                                        <h3>{post.title}</h3>
+                                        <div className="dash-post-meta">
+                                            <span>{post.lastEdited}</span>
+                                            <span className="dash-meta-sep">·</span>
+                                            <span>{post.readTime}</span>
+                                            {post.views > 0 && (
+                                                <>
+                                                    <span className="dash-meta-sep">·</span>
+                                                    <span>{post.views.toLocaleString()} views</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="dash-post-card-right">
+                                    {post.views > 0 && <Sparkline data={sparkData[post.id]} />}
+                                    <span className="dash-post-arrow">→</span>
+                                </div>
+                            </Link>
+                        ))}
+                        {filteredPosts.length === 0 && (
+                            <div className="dash-empty">No posts found.</div>
+                        )}
+                    </div>
+                </section>
             </main>
 
             <CommandBar open={cmdOpen} onClose={() => setCmdOpen(false)} />
