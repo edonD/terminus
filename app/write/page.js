@@ -2,17 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-
-/* ═══ SAMPLE DASHBOARD DATA ═══ */
-const POSTS = [
-    { id: "1", title: "The Future of European Fintech Infrastructure", status: "published", views: 1247, readTime: "8 min", lastEdited: "2026.02.11", slug: "the-future-of-european-fintech" },
-    { id: "2", title: "AI Agents Are the New APIs", status: "published", views: 892, readTime: "6 min", lastEdited: "2026.02.08", slug: "ai-agents-are-the-new-apis" },
-    { id: "3", title: "Stablecoins Will Eat SWIFT", status: "published", views: 2103, readTime: "12 min", lastEdited: "2026.02.03", slug: "stablecoins-will-eat-swift" },
-    { id: "4", title: "What I Learned Building in Public for 6 Months", status: "published", views: 1560, readTime: "10 min", lastEdited: "2026.01.28", slug: "building-in-public-lessons" },
-    { id: "5", title: "The MEV Problem, Explained for Humans", status: "published", views: 780, readTime: "14 min", lastEdited: "2026.01.20", slug: "the-mev-problem-explained" },
-    { id: "6", title: "Why I Left Corporate to Build a Startup", status: "draft", views: 0, readTime: "—", lastEdited: "2026.02.10", slug: "why-i-left-corporate" },
-    { id: "7", title: "Regulatory Arbitrage in Digital Markets", status: "draft", views: 0, readTime: "—", lastEdited: "2026.02.09", slug: "regulatory-arbitrage" },
-];
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 /* ═══ SPARKLINE COMPONENT ═══ */
 function Sparkline({ data }) {
@@ -99,6 +90,9 @@ function CommandBar({ open, onClose }) {
 
 /* ═══ DASHBOARD PAGE ═══ */
 export default function WriteDashboard() {
+    const posts = useQuery(api.posts.list);
+    const deletePost = useMutation(api.posts.remove);
+
     const [searchQuery, setSearchQuery] = useState("");
     const [sortKey, setSortKey] = useState("lastEdited");
     const [sortDir, setSortDir] = useState("desc");
@@ -118,14 +112,26 @@ export default function WriteDashboard() {
         else { setSortKey(key); setSortDir("desc"); }
     };
 
+    const handleDelete = async (e, postId) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (window.confirm("Delete this post?")) {
+            await deletePost({ id: postId });
+        }
+    };
+
+    const allPosts = posts || [];
+
     const filteredPosts = useMemo(() => {
-        let result = [...POSTS];
+        let result = [...allPosts];
         if (filter !== "all") result = result.filter(p => p.status === filter);
         if (searchQuery) {
             result = result.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()));
         }
         result.sort((a, b) => {
-            let av = a[sortKey], bv = b[sortKey];
+            const keyMap = { lastEdited: "date", title: "title", views: "views" };
+            const realKey = keyMap[sortKey] || sortKey;
+            let av = a[realKey], bv = b[realKey];
             if (typeof av === "string") av = av.toLowerCase();
             if (typeof bv === "string") bv = bv.toLowerCase();
             if (av < bv) return sortDir === "asc" ? -1 : 1;
@@ -133,19 +139,27 @@ export default function WriteDashboard() {
             return 0;
         });
         return result;
-    }, [searchQuery, sortKey, sortDir, filter]);
+    }, [allPosts, searchQuery, sortKey, sortDir, filter]);
 
-    const totalViews = POSTS.reduce((s, p) => s + p.views, 0);
-    const publishedCount = POSTS.filter(p => p.status === "published").length;
-    const draftCount = POSTS.filter(p => p.status === "draft").length;
+    const totalViews = allPosts.reduce((s, p) => s + p.views, 0);
+    const publishedCount = allPosts.filter(p => p.status === "published").length;
+    const draftCount = allPosts.filter(p => p.status === "draft").length;
 
     const sparkData = useMemo(() => {
         const data = {};
-        POSTS.forEach(p => {
-            data[p.id] = Array.from({ length: 7 }, () => Math.floor(Math.random() * p.views / 7 + Math.random() * 20));
+        allPosts.forEach(p => {
+            data[p._id] = Array.from({ length: 7 }, () => Math.floor(Math.random() * p.views / 7 + Math.random() * 20));
         });
         return data;
-    }, []);
+    }, [allPosts]);
+
+    if (!posts) {
+        return (
+            <div className="dash-shell" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ color: "#7a8fa6", fontFamily: "var(--font-mono, monospace)", fontSize: "0.78rem" }}>Loading…</span>
+            </div>
+        );
+    }
 
     return (
         <div className="dash-shell">
@@ -179,7 +193,7 @@ export default function WriteDashboard() {
                     <div className="dash-stat-card">
                         <div className="dash-stat-icon">📄</div>
                         <div>
-                            <div className="dash-stat-value">{POSTS.length}</div>
+                            <div className="dash-stat-value">{allPosts.length}</div>
                             <div className="dash-stat-label">Total Posts</div>
                         </div>
                     </div>
@@ -231,7 +245,7 @@ export default function WriteDashboard() {
                     <div className="dash-posts-header">
                         <div className="dash-posts-title-row">
                             <h2>All Posts</h2>
-                            <span className="dash-posts-count">{filteredPosts.length} of {POSTS.length}</span>
+                            <span className="dash-posts-count">{filteredPosts.length} of {allPosts.length}</span>
                         </div>
                         <div className="dash-posts-controls">
                             <div className="dash-filter-tabs">
@@ -277,8 +291,8 @@ export default function WriteDashboard() {
                     <div className="dash-post-list">
                         {filteredPosts.map((post) => (
                             <Link
-                                key={post.id}
-                                href={`/write/${post.id}`}
+                                key={post._id}
+                                href={`/write/${post._id}`}
                                 className="dash-post-card"
                             >
                                 <div className="dash-post-card-main">
@@ -288,7 +302,7 @@ export default function WriteDashboard() {
                                     <div className="dash-post-info">
                                         <h3>{post.title}</h3>
                                         <div className="dash-post-meta">
-                                            <span>{post.lastEdited}</span>
+                                            <span>{post.date}</span>
                                             <span className="dash-meta-sep">·</span>
                                             <span>{post.readTime}</span>
                                             {post.views > 0 && (
@@ -301,7 +315,27 @@ export default function WriteDashboard() {
                                     </div>
                                 </div>
                                 <div className="dash-post-card-right">
-                                    {post.views > 0 && <Sparkline data={sparkData[post.id]} />}
+                                    {post.views > 0 && <Sparkline data={sparkData[post._id] || [0]} />}
+                                    <button
+                                        className="dash-post-delete"
+                                        title="Delete post"
+                                        onClick={(e) => handleDelete(e, post._id)}
+                                        style={{
+                                            background: "none",
+                                            border: "none",
+                                            color: "#7a8fa6",
+                                            cursor: "pointer",
+                                            fontSize: "0.7rem",
+                                            padding: "4px 8px",
+                                            borderRadius: "4px",
+                                            opacity: 0.5,
+                                            transition: "opacity 0.2s",
+                                        }}
+                                        onMouseEnter={(e) => e.target.style.opacity = 1}
+                                        onMouseLeave={(e) => e.target.style.opacity = 0.5}
+                                    >
+                                        ✕
+                                    </button>
                                     <span className="dash-post-arrow">→</span>
                                 </div>
                             </Link>

@@ -1,65 +1,14 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
-
-const SAMPLE_POSTS = [
-  {
-    slug: "the-future-of-european-fintech",
-    title: "The Future of European Fintech Infrastructure",
-    excerpt:
-      "Why Europe's regulatory moat is becoming its biggest competitive advantage in building the next generation of financial plumbing.",
-    date: "2026.02.11",
-    readTime: "8 min",
-    tags: ["fintech", "europe", "infrastructure"],
-    wordCount: 2400,
-  },
-  {
-    slug: "ai-agents-are-the-new-apis",
-    title: "AI Agents Are the New APIs",
-    excerpt:
-      "The shift from request-response to autonomous task completion is the biggest paradigm shift since REST. Here is what it means for builders.",
-    date: "2026.02.08",
-    readTime: "6 min",
-    tags: ["AI", "engineering", "architecture"],
-    wordCount: 1800,
-  },
-  {
-    slug: "stablecoins-will-eat-swift",
-    title: "Stablecoins Will Eat SWIFT",
-    excerpt:
-      "A deep dive into why blockchain-native payment rails will replace legacy correspondence banking within the decade.",
-    date: "2026.02.03",
-    readTime: "12 min",
-    tags: ["crypto", "fintech", "payments"],
-    wordCount: 3600,
-  },
-  {
-    slug: "building-in-public-lessons",
-    title: "What I Learned Building in Public for 6 Months",
-    excerpt:
-      "Raw lessons from shipping a B2B product with zero marketing budget, zero connections, and an unreasonable amount of conviction.",
-    date: "2026.01.28",
-    readTime: "10 min",
-    tags: ["startups", "building"],
-    wordCount: 3000,
-  },
-  {
-    slug: "the-mev-problem-explained",
-    title: "The MEV Problem, Explained for Humans",
-    excerpt:
-      "Maximal Extractable Value is silently taxing every DeFi user. Here is how sandwich attacks work and what we can do about it.",
-    date: "2026.01.20",
-    readTime: "14 min",
-    tags: ["DeFi", "engineering", "crypto"],
-    wordCount: 4200,
-  },
-];
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
 
 const PERSONAL_PROFILE = {
   name: "Edon",
-  imagePath: "/edon.png",
+  imagePath: "/edon-new.png",
 };
-
-const TOPICS = [...new Set(SAMPLE_POSTS.flatMap((post) => post.tags))];
 
 function PostRow({ post }) {
   return (
@@ -81,7 +30,26 @@ function PostRow({ post }) {
 }
 
 export default function HomePage() {
-  const [featured, ...rest] = SAMPLE_POSTS;
+  const posts = useQuery(api.posts.list, { status: "published" });
+
+  if (!posts) {
+    return (
+      <div className="home-shell" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "#7a8fa6", fontFamily: "var(--font-mono, monospace)", fontSize: "0.78rem" }}>Loading…</span>
+      </div>
+    );
+  }
+
+  const TOPICS = [...new Set(posts.flatMap((post) => post.tags))];
+  const [featured, ...rest] = posts;
+
+  if (!featured) {
+    return (
+      <div className="home-shell" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ color: "#7a8fa6", fontFamily: "var(--font-mono, monospace)", fontSize: "0.78rem" }}>No posts yet.</span>
+      </div>
+    );
+  }
 
   return (
     <div className="home-shell">
@@ -155,7 +123,7 @@ export default function HomePage() {
             <p id="archive-heading" className="home-section-label">
               Archive
             </p>
-            <span>{SAMPLE_POSTS.length} essays</span>
+            <span>{posts.length} essays</span>
           </div>
           <ul className="home-post-list">
             <PostRow post={featured} />

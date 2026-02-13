@@ -1,4 +1,5 @@
 import "./globals.css";
+import ConvexClientProvider from "./ConvexClientProvider";
 
 export const metadata = {
   title: "TERMINUS — Command Center Blog",
@@ -8,7 +9,9 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ConvexClientProvider>{children}</ConvexClientProvider>
+      </body>
     </html>
   );
 }

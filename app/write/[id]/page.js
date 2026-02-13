@@ -2,34 +2,12 @@
 
 import { useMemo, useState, useCallback, useEffect, useRef, use } from "react";
 import Link from "next/link";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 /* ═══════════════════════════════════════════════════
    DATA & CONSTANTS
    ═══════════════════════════════════════════════════ */
-
-const EXISTING_DRAFT = {
-  title: "The Future of European Fintech Infrastructure",
-  subtitle:
-    "Why Europe's regulatory moat is becoming its biggest competitive advantage.",
-  blocks: [
-    {
-      type: "paragraph",
-      content:
-        "While Silicon Valley moves fast and breaks things, Europe has been quietly building something more durable: a regulatory framework that actually works for fintech innovation.",
-    },
-    { type: "heading", content: "The Infrastructure Layer" },
-    {
-      type: "paragraph",
-      content:
-        "The real opportunity is in the plumbing: APIs, settlement layers, and compliance engines.",
-    },
-    {
-      type: "quote",
-      content:
-        "The best time to build financial infrastructure in Europe was five years ago. The second best time is now.",
-    },
-  ],
-};
 
 const STARTER_TEMPLATES = [
   {
@@ -337,12 +315,34 @@ export default function EditorPage({ params }) {
   const resolvedParams = use(params);
   const isNew = resolvedParams.id === "new";
 
-  /* ── State ── */
-  const [title, setTitle] = useState(isNew ? "" : EXISTING_DRAFT.title);
-  const [subtitle, setSubtitle] = useState(isNew ? "" : EXISTING_DRAFT.subtitle);
-  const [blocks, setBlocks] = useState(
-    isNew ? withIds([{ type: "paragraph", content: "" }]) : withIds(EXISTING_DRAFT.blocks)
+  /* ── Convex ── */
+  const existingPost = useQuery(
+    api.posts.getById,
+    isNew ? "skip" : { id: resolvedParams.id }
   );
+  const createPost = useMutation(api.posts.create);
+  const updatePost = useMutation(api.posts.update);
+  const [postId, setPostId] = useState(isNew ? null : resolvedParams.id);
+  const [initialized, setInitialized] = useState(isNew);
+
+  /* ── State ── */
+  const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
+  const [blocks, setBlocks] = useState(
+    withIds([{ type: "paragraph", content: "" }])
+  );
+
+  /* ── Load existing post data ── */
+  useEffect(() => {
+    if (!isNew && existingPost && !initialized) {
+      setTitle(existingPost.title || "");
+      setSubtitle(existingPost.subtitle || "");
+      if (existingPost.blocks && existingPost.blocks.length > 0) {
+        setBlocks(withIds(existingPost.blocks));
+      }
+      setInitialized(true);
+    }
+  }, [existingPost, isNew, initialized]);
   const [saveStatus, setSaveStatus] = useState("saved");
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [sidebarTab, setSidebarTab] = useState("research");
@@ -678,9 +678,76 @@ export default function EditorPage({ params }) {
     await navigator.clipboard.writeText(`# ${title || "Untitled"}\n\n${subtitle || ""}\n\n${body}`.trim());
   }
 
-  function saveDraft() {
+  async function saveDraft() {
     setSaveStatus("saving");
-    setTimeout(() => setSaveStatus("saved"), 500);
+    try {
+      const slug = (title || "untitled").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const postData = {
+        title: title || "Untitled",
+        subtitle: subtitle || "",
+        excerpt: subtitle || title || "",
+        slug,
+        date: new Date().toISOString().slice(0, 10).replace(/-/g, "."),
+        readTime: `${readTime} min`,
+        wordCount,
+        tags: [],
+        status: "draft",
+        views: 0,
+        blocks: blocks.map(({ type, content }) => ({ type, content })),
+      };
+
+      if (postId) {
+        await updatePost({ id: postId, ...postData });
+      } else {
+        const newId = await createPost(postData);
+        setPostId(newId);
+      }
+      setSaveStatus("saved");
+    } catch (err) {
+      console.error("Save failed:", err);
+      setSaveStatus("unsaved");
+    }
+  }
+
+  async function publishPost() {
+    setSaveStatus("saving");
+    try {
+      const slug = (title || "untitled").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const content = blocks.map(b => {
+        if (b.type === "heading") return `<h2>${b.content}</h2>`;
+        if (b.type === "heading-h3") return `<h3>${b.content}</h3>`;
+        if (b.type === "quote") return `<blockquote>${b.content}</blockquote>`;
+        if (b.type === "code") return `<pre><code>${b.content}</code></pre>`;
+        if (b.type === "divider") return `<hr/>`;
+        return `<p>${b.content}</p>`;
+      }).join("\n");
+
+      const postData = {
+        title: title || "Untitled",
+        subtitle: subtitle || "",
+        excerpt: subtitle || title || "",
+        content,
+        slug,
+        date: new Date().toISOString().slice(0, 10).replace(/-/g, "."),
+        readTime: `${readTime} min`,
+        wordCount,
+        tags: [],
+        status: "published",
+        views: 0,
+        blocks: blocks.map(({ type, content }) => ({ type, content })),
+      };
+
+      if (postId) {
+        await updatePost({ id: postId, ...postData });
+      } else {
+        const newId = await createPost(postData);
+        setPostId(newId);
+      }
+      setSaveStatus("saved");
+    } catch (err) {
+      console.error("Publish failed:", err);
+      setSaveStatus("unsaved");
+    }
   }
 
   /* ── Click-away handlers ── */
@@ -725,7 +792,7 @@ export default function EditorPage({ params }) {
         <div className="ed-topbar-right">
           <button className="ed-btn ghost" onClick={exportMarkdown}>Export</button>
           <button className="ed-btn ghost" onClick={saveDraft}>Save</button>
-          <button className="ed-btn primary" onClick={saveDraft}>Publish</button>
+          <button className="ed-btn primary" onClick={publishPost}>Publish</button>
           <span className="ed-sep" />
           <button
             className={`ed-btn icon ${sidebarOpen ? "active" : ""}`}
