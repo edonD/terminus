@@ -30,7 +30,27 @@ function PostRow({ post }) {
 }
 
 export default function HomePage() {
+<<<<<<< HEAD
   const posts = useQuery(api.posts.list, { status: "published" });
+=======
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [subscribed, setSubscribed] = useState(false);
+
+  const handleSubscribe = (e) => {
+    e.preventDefault();
+    if (!email || !email.includes("@")) return;
+    const subs = JSON.parse(localStorage.getItem("terminus_subs") || "[]");
+    if (!subs.includes(email)) {
+      subs.push(email);
+      localStorage.setItem("terminus_subs", JSON.stringify(subs));
+    }
+    setSubscribed(true);
+    setEmail("");
+  };
+>>>>>>> 5b5058c3e16e07d1a2d462924acbc2009bbcbd78
 
   if (!posts) {
     return (
@@ -57,6 +77,7 @@ export default function HomePage() {
         <Link href="/" className="home-brand">
           TERMINUS
         </Link>
+<<<<<<< HEAD
         <nav className="home-nav">
           <Link href="/" className="active">
             Blog
@@ -64,6 +85,11 @@ export default function HomePage() {
           <a href="https://github.com/edonD" target="_blank" rel="noopener">
             GitHub
           </a>
+=======
+        <nav className="topbar-nav">
+          <Link href="/" className="active">Blog</Link>
+          <a href="https://x.com/edon_d" target="_blank" rel="noopener">X</a>
+>>>>>>> 5b5058c3e16e07d1a2d462924acbc2009bbcbd78
           <a href="mailto:hello@terminus.blog">Contact</a>
         </nav>
       </header>
@@ -102,6 +128,7 @@ export default function HomePage() {
           </div>
         </section>
 
+<<<<<<< HEAD
         <section className="home-featured" aria-labelledby="featured-heading">
           <p id="featured-heading" className="home-section-label">
             Featured
@@ -136,6 +163,46 @@ export default function HomePage() {
 
       <footer className="home-footer">
         TERMINUS | {new Date().getFullYear()} | Built with conviction
+=======
+      {/* ── Subscribe ── */}
+      <section className="subscribe-section">
+        <div className="subscribe-box">
+          <span className="subscribe-icon">◉</span>
+          <h3>Get new posts delivered to your inbox</h3>
+          <p>No spam. Unsubscribe anytime. Just signal.</p>
+          {subscribed ? (
+            <div className="subscribe-success">
+              <span>✓</span> You're in. Welcome to the terminal.
+            </div>
+          ) : (
+            <form className="subscribe-form" onSubmit={handleSubscribe}>
+              <input
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <button type="submit" className="btn btn-primary btn-sm">Subscribe</button>
+            </form>
+          )}
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer style={{
+        position: "relative",
+        zIndex: 1,
+        textAlign: "center",
+        padding: "40px 24px",
+        borderTop: "1px solid var(--line)",
+        fontSize: "0.6rem",
+        color: "var(--muted)",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+      }}>
+        TERMINUS · {new Date().getFullYear()} · Built with conviction
+>>>>>>> 5b5058c3e16e07d1a2d462924acbc2009bbcbd78
       </footer>
     </div>
   );
