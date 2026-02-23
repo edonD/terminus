@@ -35,9 +35,9 @@ export default function WriteLayout({ children }) {
                 alignItems: "center",
                 justifyContent: "center",
                 fontFamily: "var(--font-mono, monospace)",
-                color: "#7a8fa6",
+                color: "var(--muted, #8a7e6b)",
                 fontSize: "0.78rem",
-                background: "#050608",
+                background: "var(--bg-0, #f5f0e8)",
             }}>
                 Authenticating…
             </div>
@@ -54,21 +54,21 @@ export default function WriteLayout({ children }) {
                 justifyContent: "center",
                 gap: "16px",
                 fontFamily: "var(--font-mono, monospace)",
-                color: "#7a8fa6",
+                color: "var(--muted, #8a7e6b)",
                 fontSize: "0.78rem",
-                background: "#050608",
+                background: "var(--bg-0, #f5f0e8)",
             }}>
-                <span style={{ color: "#57f1d2", fontSize: "1.2rem" }}>◉</span>
+                <span style={{ color: "var(--accent, #c47a2a)", fontSize: "1.2rem" }}>◉</span>
                 <span>TERMINUS — Access Restricted</span>
-                <span style={{ fontSize: "0.62rem", color: "#3a4f65" }}>
+                <span style={{ fontSize: "0.62rem", color: "var(--line-strong, #c4b9a3)" }}>
                     This area is for the blog owner only.
                 </span>
                 <Link href="/" style={{
                     marginTop: "12px",
                     padding: "8px 18px",
-                    border: "1px solid #2a3f52",
+                    border: "1px solid var(--line, #d4cbb8)",
                     borderRadius: "6px",
-                    color: "#57f1d2",
+                    color: "var(--accent, #c47a2a)",
                     fontSize: "0.68rem",
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",

@@ -2,25 +2,26 @@
    TERMINUS  ·  Command-Center Blog
    ═══════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&display=swap');
 
 :root {
-  --bg-0: #050608;
-  --bg-1: #0c1015;
-  --panel-0: #0f151c;
-  --panel-1: #141c24;
-  --line: #1e2d3a;
-  --line-strong: #2a3f52;
-  --text: #ebf0f7;
-  --muted: #7a8fa6;
-  --accent: #57f1d2;
-  --accent-soft: rgba(87, 241, 210, 0.12);
-  --accent-glow: rgba(87, 241, 210, 0.06);
-  --danger: #ff6b7a;
-  --ok: #57f1d2;
-  --warning: #ffb432;
+  --bg-0: #f5f0e8;
+  --bg-1: #ebe5d9;
+  --panel-0: #e8e1d4;
+  --panel-1: #dfd8ca;
+  --line: #d4cbb8;
+  --line-strong: #c4b9a3;
+  --text: #1a1610;
+  --muted: #8a7e6b;
+  --accent: #c47a2a;
+  --accent-soft: rgba(196, 122, 42, 0.12);
+  --accent-glow: rgba(196, 122, 42, 0.06);
+  --danger: #c44d3c;
+  --ok: #5a8a5c;
+  --warning: #c49a2a;
   --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-serif: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-prose: 'Lora', Georgia, 'Times New Roman', serif;
   --speed-fast: 120ms ease-out;
   --speed-mid: 200ms ease-out;
   --radius: 10px;
@@ -163,7 +164,7 @@ a {
   align-items: center;
   justify-content: space-between;
   padding: 14px 28px;
-  background: rgba(5, 6, 8, 0.82);
+  background: rgba(245, 240, 232, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
@@ -185,7 +186,7 @@ a {
   height: 8px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 12px rgba(87, 241, 210, 0.5);
+  box-shadow: 0 0 12px rgba(196, 122, 42, 0.5);
   animation: breathe 4s ease-in-out infinite;
 }
 
@@ -1202,7 +1203,7 @@ body:has(.editor-layout)::after {
   justify-content: space-between;
   padding: 10px 24px;
   border-bottom: 1px solid var(--line);
-  background: rgba(5, 6, 8, 0.9);
+  background: rgba(245, 240, 232, 0.92);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -1285,7 +1286,7 @@ body:has(.editor-layout)::after {
 }
 
 .editor-subtitle-input::placeholder {
-  color: #2a3f52;
+  color: var(--line-strong);
 }
 
 /* ── Editor blocks ── */
@@ -1871,4 +1872,147 @@ body:has(.editor-layout)::after {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ═══════════════════════════════════════════════════
+   FOCUS MODE (HEMINGWAY)
+   ═══════════════════════════════════════════════════ */
+
+body.focus-mode-active .topbar,
+body.focus-mode-active .reading-progress,
+body.focus-mode-active .sticky-header,
+body.focus-mode-active .cmd-palette,
+body.focus-mode-active .sidebar-nav {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+body:not(.focus-mode-active) .topbar,
+body:not(.focus-mode-active) .reading-progress,
+body:not(.focus-mode-active) .sticky-header,
+body:not(.focus-mode-active) .sidebar-nav {
+  transition: opacity 0.3s ease;
+}
+
+body.focus-mode-active {
+  transition: background 0.8s ease;
+  background: var(--bg-0);
+  /* Deepest black for focus */
+}
+
+/* Extra padding at bottom to allow typewriter scrolling to center the last block */
+.editor-canvas {
+  padding-bottom: 50vh;
+}
+
+/* ═══════════════════════════════════════════════════
+   GHOST TEXT (INVISIBLE AI)
+   ═══════════════════════════════════════════════════ */
+
+.ghost-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--muted);
+  opacity: 0.5;
+  pointer-events: none;
+  font-style: italic;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  z-index: 5;
+}
+
+.ghost-text-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+/* ═══════════════════════════════════════════════════
+   ARCHITECT PANEL (STRUCTURE)
+   ═══════════════════════════════════════════════════ */
+
+.architect-panel {
+  position: fixed;
+  top: 60px;
+  right: 0;
+  width: 280px;
+  height: calc(100vh - 60px);
+  background: var(--panel-0);
+  backdrop-filter: blur(12px);
+  border-left: 1px solid var(--line);
+  padding: 24px;
+  overflow-y: auto;
+  z-index: 90;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.08);
+}
+
+.architect-panel.open {
+  transform: translateX(0);
+}
+
+.architect-title {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.architect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.architect-item {
+  color: var(--muted);
+  font-family: var(--font-serif);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: color var(--speed-fast);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.architect-item:hover {
+  color: var(--text);
+}
+
+.architect-item.active {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.architect-item-h2 {
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 8px;
+}
+
+.architect-item-h3 {
+  padding-left: 16px;
+  font-size: 0.76rem;
+  border-left: 1px solid var(--line-strong);
+}
+
+/* Adjust layout when architect is open to prevent overlapping text */
+body.architect-open .editor-layout {
+  padding-right: 280px;
+  transition: padding-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body:not(.architect-open) .editor-layout {
+  padding-right: 0;
+  transition: padding-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }

@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback, use } from "react";
 import Link from "next/link";
+import CommandBar from "./components/CommandBar";
+import TitleGenModal from "./components/TitleGenModal";
+import ResearchPanel from "./components/ResearchPanel";
+import ArchitectPanel from "./components/ArchitectPanel";
+import AiInlinePanel from "./components/AiInlinePanel";
+import EditorTopbar from "./components/EditorTopbar";
+import EditorFooter from "./components/EditorFooter";
 
 /* ═══════════════════════════════════════════════════
    TONE & SLASH COMMAND DEFINITIONS
@@ -139,6 +146,14 @@ export default function EditorPage({ params }) {
     const [researchStatus, setResearchStatus] = useState("");
     const [researchSources, setResearchSources] = useState(0);
 
+    // Ghost Text Phase 2
+    const [ghostText, setGhostText] = useState("");
+    const [isGhosting, setIsGhosting] = useState(false);
+    const ghostDebounceRef = useRef(null);
+
+    // Architect Phase 3
+    const [showOutline, setShowOutline] = useState(false);
+
     const blockRefs = useRef({});
     const aiInlineRef = useRef(aiInline);
     const slashMenuRef = useRef(slashMenu);
@@ -146,6 +161,41 @@ export default function EditorPage({ params }) {
     // Keep refs in sync for keyboard shortcuts
     useEffect(() => { aiInlineRef.current = aiInline; }, [aiInline]);
     useEffect(() => { slashMenuRef.current = slashMenu; }, [slashMenu]);
+
+    // Focus Mode (Hemingway) Side Effects & Architect Body Class
+    useEffect(() => {
+        if (focusMode) {
+            document.body.classList.add("focus-mode-active");
+        } else {
+            document.body.classList.remove("focus-mode-active");
+        }
+
+        if (showOutline) {
+            document.body.classList.add("architect-open");
+        } else {
+            document.body.classList.remove("architect-open");
+        }
+
+        return () => {
+            document.body.classList.remove("focus-mode-active");
+            document.body.classList.remove("architect-open");
+        }
+    }, [focusMode, showOutline]);
+
+    // Typewriter Scrolling
+    useEffect(() => {
+        if (activeBlockId && blockRefs.current[activeBlockId]) {
+            // Slight delay to allow layout recalculation (e.g. adding a new block)
+            setTimeout(() => {
+                if (blockRefs.current[activeBlockId]) {
+                    blockRefs.current[activeBlockId].scrollIntoView({
+                        behavior: "smooth",
+                        block: "center",
+                    });
+                }
+            }, 50);
+        }
+    }, [activeBlockId]);
 
     // Auto-detect tone from content
     useEffect(() => {
@@ -255,7 +305,11 @@ export default function EditorPage({ params }) {
     };
 
     const deleteBlock = (id) => {
-        if (blocks.length <= 1) return;
+        if (blocks.length <= 1) {
+            // If it's the last block, reset it to an empty paragraph instead of refusing
+            setBlocks([{ id: `b${Date.now()}`, type: "paragraph", content: "" }]);
+            return;
+        }
         const idx = blocks.findIndex(b => b.id === id);
         setBlocks(prev => prev.filter(b => b.id !== id));
         const prevBlock = blocks[idx - 1];
@@ -287,19 +341,81 @@ export default function EditorPage({ params }) {
         }
 
         // Normal block key handling (runs whether or not slash menu was open)
+        if (e.key === "Tab" && ghostText && block.id === activeBlockId) {
+            e.preventDefault();
+            // Accept ghost text
+            updateBlock(block.id, block.content + ghostText);
+            setGhostText("");
+            setIsGhosting(false);
+            return;
+        }
+
         if (e.key === "Enter" && !e.shiftKey && block.type !== "code" && !slashMenu) {
             e.preventDefault();
             addBlockAfter(block.id);
         }
-        if (e.key === "Backspace" && block.content === "" && blocks.length > 1) {
-            e.preventDefault();
-            deleteBlock(block.id);
+        if (e.key === "Backspace" && blocks.length > 1) {
+            // Only delete if the block is truly empty
+            if (!block.content || block.content === "") {
+                e.preventDefault();
+                deleteBlock(block.id);
+            }
+        }
+
+        // Only clear ghost text on actual content typing, handled in onInput or generalized:
+        if (e.key !== "Tab" && e.key !== "Shift" && e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && ghostText) {
+            setGhostText("");
+            setIsGhosting(false);
+        }
+    };
+
+    const fetchGhostText = async (block, currentText) => {
+        if (!currentText.trim() || currentText.length < 10) return;
+        setIsGhosting(true);
+        try {
+            const res = await fetch("/api/ai", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "continue",
+                    input: currentText,
+                    context: getStructuredContext(),
+                    fieldType: block.type,
+                    fieldContent: currentText,
+                    model: aiModel,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.text && activeBlockId === block.id) {
+                    setGhostText(data.text);
+                }
+            }
+        } catch (e) {
+            // silent fail for ghost text
+        } finally {
+            setIsGhosting(false);
         }
     };
 
     const handleBlockInput = (e, block) => {
         const value = e.target.value ?? e.target.textContent ?? "";
         updateBlock(block.id, value);
+
+        // Clear ghost text immediately on input
+        if (ghostText) {
+            setGhostText("");
+        }
+
+        // Debounce ghost text fetch
+        if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
+        if (!slashMenu && value.trim().length > 10) {
+            ghostDebounceRef.current = setTimeout(() => {
+                if (activeBlockId === block.id) {
+                    fetchGhostText(block, value);
+                }
+            }, 800);
+        }
 
         // Markdown shortcuts
         if (value === "## ") {
@@ -518,8 +634,8 @@ export default function EditorPage({ params }) {
     };
     const handleDragEnd = () => setDragId(null);
 
-    /* ═══ REUSABLE AI INLINE PANEL ═══ */
-    const AiInlinePanel = ({ fieldLabel }) => {
+    /* ═══ AI INLINE PANEL WRAPPER ═══ */
+    const renderAiInlinePanel = (fieldLabel) => {
         const fieldType = getFieldType(aiInline?.blockId);
         const fieldContent = getFieldContent(aiInline?.blockId);
         return (
@@ -915,6 +1031,46 @@ export default function EditorPage({ params }) {
         );
     };
 
+    /* ═══ ARCHITECT PANEL ═══ */
+    const ArchitectPanel = () => {
+        const headings = blocks.filter(b => b.type === "heading" || b.type === "heading-h3");
+
+        return (
+            <div className={`architect-panel ${showOutline ? "open" : ""}`}>
+                <div className="architect-title">
+                    <span style={{ fontSize: "1.1em" }}>◱</span> Structure
+                    <button
+                        onClick={() => setShowOutline(false)}
+                        style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.8rem" }}
+                    >✕</button>
+                </div>
+
+                {headings.length === 0 ? (
+                    <div style={{ color: "var(--muted)", fontSize: "0.76rem", fontStyle: "italic", textAlign: "center", marginTop: "40px" }}>
+                        No headings yet.<br />Type /h1 or /h2 to outline your thoughts.
+                    </div>
+                ) : (
+                    <div className="architect-list">
+                        {headings.map(h => (
+                            <div
+                                key={h.id}
+                                className={`architect-item ${h.type === "heading" ? "architect-item-h2" : "architect-item-h3"} ${activeBlockId === h.id ? "active" : ""}`}
+                                onClick={() => {
+                                    if (blockRefs.current[h.id]) {
+                                        blockRefs.current[h.id].scrollIntoView({ behavior: "smooth", block: "center" });
+                                        blockRefs.current[h.id].focus();
+                                    }
+                                }}
+                            >
+                                {h.content || <span style={{ opacity: 0.4, fontStyle: "italic" }}>Empty heading</span>}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     /* ═══ RENDER ═══ */
     return (
         <div className="editor-layout">
@@ -930,6 +1086,9 @@ export default function EditorPage({ params }) {
                 <div className="editor-topbar-right">
                     <button className="btn btn-ghost btn-sm" onClick={() => setFocusMode(f => !f)}>
                         {focusMode ? "◉ Focus ON" : "○ Focus"}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowOutline(o => !o)}>
+                        ◱ Architect
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={() => setResearchOpen(true)}>
                         🔍 Research
@@ -994,14 +1153,32 @@ export default function EditorPage({ params }) {
                             <div className="block-divider" />
                         ) : block.type === "code" ? (
                             <div className="code-block" style={{ margin: "8px 0" }}>
-                                <div className="code-block-header">
+                                <div className="code-block-header" style={{ display: "flex", alignItems: "center" }}>
                                     <div className="code-block-dots"><span /><span /><span /></div>
                                     <span className="code-block-lang">code</span>
+                                    <button
+                                        onClick={() => deleteBlock(block.id)}
+                                        style={{
+                                            marginLeft: "auto",
+                                            background: "none",
+                                            border: "none",
+                                            color: "var(--muted)",
+                                            cursor: "pointer",
+                                            fontSize: "0.72rem",
+                                            padding: "2px 6px",
+                                            borderRadius: "4px",
+                                            transition: "color 0.15s",
+                                        }}
+                                        onMouseEnter={e => e.target.style.color = "#ff6b6b"}
+                                        onMouseLeave={e => e.target.style.color = "var(--muted)"}
+                                        title="Delete code block"
+                                    >✕</button>
                                 </div>
                                 <textarea
                                     ref={el => blockRefs.current[block.id] = el}
                                     value={block.content}
                                     onChange={e => updateBlock(block.id, e.target.value)}
+                                    onKeyDown={e => handleBlockKeyDown(e, block)}
                                     onFocus={() => setActiveBlockId(block.id)}
                                     style={{
                                         width: "100%",
@@ -1009,7 +1186,7 @@ export default function EditorPage({ params }) {
                                         padding: "16px",
                                         border: "none",
                                         background: "transparent",
-                                        color: "#c5d0de",
+                                        color: "var(--text)",
                                         fontFamily: "var(--font-mono)",
                                         fontSize: "0.82rem",
                                         lineHeight: "1.65",
@@ -1035,17 +1212,25 @@ export default function EditorPage({ params }) {
                                 />
                             </div>
                         ) : (
-                            <textarea
-                                ref={el => blockRefs.current[block.id] = el}
-                                className={`block-content ${block.type === "heading" ? "heading" : ""} ${block.type === "heading-h3" ? "heading-h3" : ""}`}
-                                value={block.content}
-                                onChange={e => handleBlockInput(e, block)}
-                                onKeyDown={e => handleBlockKeyDown(e, block)}
-                                onFocus={() => setActiveBlockId(block.id)}
-                                placeholder={block.type === "heading" ? "Heading…" : block.type === "heading-h3" ? "Subheading…" : "Write something, or type / for commands…"}
-                                rows={1}
-                                style={{ resize: "none" }}
-                            />
+                            <div className="ghost-text-wrapper">
+                                <textarea
+                                    ref={el => blockRefs.current[block.id] = el}
+                                    className={`block-content ${block.type === "heading" ? "heading" : ""} ${block.type === "heading-h3" ? "heading-h3" : ""}`}
+                                    value={block.content}
+                                    onChange={e => handleBlockInput(e, block)}
+                                    onKeyDown={e => handleBlockKeyDown(e, block)}
+                                    onFocus={() => setActiveBlockId(block.id)}
+                                    placeholder={block.type === "heading" ? "Heading…" : block.type === "heading-h3" ? "Subheading…" : "Write something, or type / for commands…"}
+                                    rows={1}
+                                    style={{ resize: "none", position: "relative", zIndex: 10, background: "transparent" }}
+                                />
+                                {ghostText && activeBlockId === block.id && (
+                                    <div className={`ghost-text block-content ${block.type === "heading" ? "heading" : ""} ${block.type === "heading-h3" ? "heading-h3" : ""}`}>
+                                        <span style={{ visibility: "hidden" }}>{block.content}</span>
+                                        <span>{ghostText}</span>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Slash command menu */}
@@ -1100,6 +1285,7 @@ export default function EditorPage({ params }) {
             <CommandBar />
             <TitleGenModal />
             <ResearchPanel />
+            <ArchitectPanel />
         </div>
     );
 }
