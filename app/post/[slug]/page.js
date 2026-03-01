@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, use } from "react";
 import Link from "next/link";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { useTrackPageview } from "../../hooks/useTrackPageview";
 
 /* ═══ FALLBACK POST ═══ */
 const FALLBACK_POST = {
@@ -21,7 +22,6 @@ const FALLBACK_POST = {
 export default function PostPage({ params }) {
     const resolvedParams = use(params);
     const dbPost = useQuery(api.posts.getBySlug, { slug: resolvedParams.slug });
-    const incrementViews = useMutation(api.posts.incrementViews);
 
     const post = dbPost || FALLBACK_POST;
     const isLoading = dbPost === undefined;
@@ -32,15 +32,14 @@ export default function PostPage({ params }) {
     const [activeSection, setActiveSection] = useState("");
     const [reactions, setReactions] = useState({});
     const headerRef = useRef(null);
-    const viewIncremented = useRef(false);
 
-    // Increment views once on mount
-    useEffect(() => {
-        if (dbPost && dbPost._id && !viewIncremented.current) {
-            viewIncremented.current = true;
-            incrementViews({ id: dbPost._id });
-        }
-    }, [dbPost, incrementViews]);
+    // Track pageview (replaces incrementViews)
+    useTrackPageview({
+        path: `/post/${resolvedParams.slug}`,
+        slug: resolvedParams.slug,
+        postId: dbPost?._id,
+        ready: !!dbPost,
+    });
 
     useEffect(() => {
         const handleScroll = () => {
@@ -54,14 +53,16 @@ export default function PostPage({ params }) {
                 setShowStickyHeader(headerBottom < 0);
             }
 
-            // Active section tracking
-            for (let i = sections.length - 1; i >= 0; i--) {
+            // Active section tracking — use viewport midpoint for reliable detection
+            const viewMid = window.innerHeight / 2;
+            let active = "";
+            for (let i = 0; i < sections.length; i++) {
                 const el = document.getElementById(sections[i].id);
-                if (el && el.getBoundingClientRect().top <= 120) {
-                    setActiveSection(sections[i].id);
-                    break;
+                if (el && el.getBoundingClientRect().top <= viewMid) {
+                    active = sections[i].id;
                 }
             }
+            if (active) setActiveSection(active);
         };
 
         window.addEventListener("scroll", handleScroll, { passive: true });
@@ -79,7 +80,6 @@ export default function PostPage({ params }) {
             (match, lang, code) => {
                 return `<div class="code-block">
           <div class="code-block-header">
-            <div class="code-block-dots"><span></span><span></span><span></span></div>
             <span class="code-block-lang">${lang}</span>
             <button class="code-block-copy" onclick="navigator.clipboard.writeText(this.closest('.code-block').querySelector('pre').textContent)">Copy</button>
           </div>
@@ -118,28 +118,28 @@ export default function PostPage({ params }) {
                     TERMINUS
                 </Link>
                 <nav className="topbar-nav">
-                    <Link href="/">Blog</Link>
-                    <a href="https://x.com/edon_d" target="_blank" rel="noopener">X</a>
+                    <Link href="/">Essays</Link>
+                    <a href="mailto:hello@terminus.blog">Contact</a>
                 </nav>
             </header>
 
             <div className="post-page">
                 {/* Post header */}
                 <div className="post-header" ref={headerRef}>
-                    <div className="post-card-meta">
-                        <span className="post-card-date">{post.date}</span>
-                        <span>·</span>
-                        <span className="post-card-readtime">{post.readTime}</span>
-                        <span>·</span>
-                        <span>{post.wordCount} words</span>
-                    </div>
                     <h1>{post.title}</h1>
-                    <p className="post-header-sub">{post.subtitle}</p>
-                    <div className="post-card-tags" style={{ justifyContent: "center", marginTop: "16px" }}>
-                        {(post.tags || []).map((t) => (
-                            <span key={t} className="tag">[{t}]</span>
-                        ))}
+                    {post.subtitle && <p className="post-header-sub">{post.subtitle}</p>}
+                    <div className="post-card-meta">
+                        <span>{post.date}</span>
+                        <span>·</span>
+                        <span>{post.readTime}</span>
+                        {(post.tags || []).length > 0 && (
+                            <>
+                                <span>·</span>
+                                <span>{(post.tags || []).join(", ")}</span>
+                            </>
+                        )}
                     </div>
+                    <div className="post-header-rule" />
                 </div>
 
                 {/* Table of Contents */}
@@ -181,22 +181,17 @@ export default function PostPage({ params }) {
                             </button>
                         ))}
                     </div>
+
+                    {/* Page marker */}
+                    <div className="page-marker">
+                        — {Math.max(1, Math.round((post.wordCount || 0) / 250))} —
+                    </div>
                 </div>
             </div>
 
-            {/* Footer */}
-            <footer style={{
-                position: "relative",
-                zIndex: 1,
-                textAlign: "center",
-                padding: "40px 24px",
-                borderTop: "1px solid var(--line)",
-                fontSize: "0.6rem",
-                color: "var(--muted)",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-            }}>
-                TERMINUS · {new Date().getFullYear()} · Built with conviction
+            {/* Footer colophon */}
+            <footer className="post-colophon">
+                Set in Playfair Display · Written in Munich · Built with conviction
             </footer>
         </>
     );

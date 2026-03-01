@@ -16,7 +16,7 @@
   justify-content: space-between;
   padding: 10px 24px;
   border-bottom: 1px solid var(--line);
-  background: rgba(5, 6, 8, 0.9);
+  background: rgba(245, 240, 232, 0.92);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -71,14 +71,17 @@
   border: none;
   background: transparent;
   color: var(--text);
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
   outline: none;
   margin-bottom: 8px;
   caret-color: var(--accent);
+  resize: none;
+  overflow: hidden;
+  display: block;
 }
 
 .editor-title-input::placeholder {
@@ -90,12 +93,15 @@
   border: none;
   background: transparent;
   color: var(--muted);
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-  line-height: 1.65;
+  font-family: var(--font-typewriter);
+  font-size: 1rem;
+  line-height: 1.72;
   outline: none;
   margin-bottom: 32px;
   caret-color: var(--accent);
+  resize: none;
+  overflow: hidden;
+  display: block;
 }
 
 .editor-subtitle-input::placeholder {
@@ -106,7 +112,25 @@
 .block {
   position: relative;
   padding: 4px 0;
-  transition: opacity 0.3s ease;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  transition: opacity 0.3s ease, border-color var(--speed-fast), background var(--speed-fast), padding var(--speed-fast);
+}
+
+.block.show-borders {
+  padding: 10px 16px;
+  margin: 4px 0;
+  border-color: rgba(212, 203, 184, 0.4);
+}
+
+.block.show-borders:hover {
+  border-color: rgba(212, 203, 184, 0.7);
+  background: rgba(228, 221, 210, 0.08);
+}
+
+.block.show-borders:focus-within {
+  border-color: rgba(212, 203, 184, 0.6);
+  background: rgba(228, 221, 210, 0.05);
 }
 
 .block.dimmed {
@@ -178,9 +202,197 @@
 .block-quote {
   padding: 16px 20px;
   border-left: 3px solid var(--accent);
-  background: rgba(87, 241, 210, 0.03);
+  background: rgba(196, 122, 42, 0.03);
   border-radius: 0 var(--radius) var(--radius) 0;
   font-style: italic;
+}
+
+.block-content.heading-h4 {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+/* ── Bulleted list ── */
+.block-bullet-list {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.block-bullet {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-size: 1.2rem;
+  line-height: 1.82em;
+  color: var(--accent);
+  user-select: none;
+}
+
+/* ── Numbered list ── */
+.block-number-list {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.block-number {
+  flex-shrink: 0;
+  min-width: 20px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.82em;
+  color: var(--accent);
+  user-select: none;
+}
+
+/* ── To-do ── */
+.block-todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.block-todo-checkbox {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all var(--speed-fast);
+}
+
+.block-todo-checkbox:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.block-todo-checkbox.checked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ── Toggle ── */
+.block-toggle {
+  border-left: 2px solid var(--line-strong);
+  padding-left: 12px;
+}
+
+.block-toggle-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.block-toggle-arrow {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 5px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, color var(--speed-fast);
+}
+
+.block-toggle-arrow.expanded {
+  transform: rotate(90deg);
+  color: var(--accent);
+}
+
+.block-toggle-arrow:hover {
+  color: var(--accent);
+}
+
+.block-toggle-body {
+  margin-top: 4px;
+  margin-left: 26px;
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: rgba(228, 221, 210, 0.02);
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+/* ── Callout ── */
+.block-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(196, 122, 42, 0.15);
+  border-radius: var(--radius);
+  background: rgba(196, 122, 42, 0.04);
+}
+
+.block-callout-emoji {
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  line-height: 1.82em;
+  user-select: none;
+}
+
+/* ── Image ── */
+.block-image-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.block-image-upload input {
+  padding: 8px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  background: rgba(228, 221, 210, 0.02);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.block-image-preview {
+  max-width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+}
+
+/* ── Slash menu category label ── */
+.ed-slash-category-label {
+  padding: 8px 14px 4px;
+  font-size: 0.48rem;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.ed-slash-body {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.ed-slash-empty {
+  padding: 18px 14px;
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--muted);
 }
 
 /* ── Slash command menu ── */
@@ -272,9 +484,9 @@
 .ai-inline {
   margin: 8px 0;
   padding: 12px 16px;
-  border: 1px solid rgba(87, 241, 210, 0.2);
+  border: 1px solid rgba(196, 122, 42, 0.2);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(87, 241, 210, 0.04), rgba(87, 241, 210, 0.01));
+  background: linear-gradient(180deg, rgba(196, 122, 42, 0.04), rgba(196, 122, 42, 0.01));
 }
 
 .ai-inline-header {
@@ -386,7 +598,7 @@
   justify-content: space-between;
   padding: 8px 24px;
   border-top: 1px solid var(--line);
-  background: rgba(5, 6, 8, 0.9);
+  background: rgba(245, 240, 232, 0.92);
   backdrop-filter: blur(12px);
   font-size: 0.6rem;
   color: var(--muted);

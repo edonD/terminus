@@ -4,11 +4,28 @@ import Image from "next/image";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
+import { useTrackPageview } from "./hooks/useTrackPageview";
 
 const PERSONAL_PROFILE = {
   name: "Edon",
   imagePath: "/edon-new.png",
 };
+
+function getBodyPreview(post) {
+  if (!post.content) return "";
+  // Strip HTML tags, decode entities, collapse whitespace
+  const text = post.content
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+  return text.length > 220 ? text.substring(0, 220).trimEnd() + "…" : text;
+}
 
 function PostRow({ post }) {
   return (
@@ -17,7 +34,10 @@ function PostRow({ post }) {
         <span className="home-post-date">{post.date}</span>
         <div className="home-post-copy">
           <h3>{post.title}</h3>
-          <p>{post.excerpt}</p>
+          {post.excerpt && <p>{post.excerpt}</p>}
+          {getBodyPreview(post) && (
+            <p className="home-body-preview">{getBodyPreview(post)}</p>
+          )}
         </div>
         <span className="home-post-meta">
           {post.readTime}
@@ -30,27 +50,8 @@ function PostRow({ post }) {
 }
 
 export default function HomePage() {
-<<<<<<< HEAD
   const posts = useQuery(api.posts.list, { status: "published" });
-=======
-  const [cmdOpen, setCmdOpen] = useState(false);
-  const [showMore, setShowMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [subscribed, setSubscribed] = useState(false);
-
-  const handleSubscribe = (e) => {
-    e.preventDefault();
-    if (!email || !email.includes("@")) return;
-    const subs = JSON.parse(localStorage.getItem("terminus_subs") || "[]");
-    if (!subs.includes(email)) {
-      subs.push(email);
-      localStorage.setItem("terminus_subs", JSON.stringify(subs));
-    }
-    setSubscribed(true);
-    setEmail("");
-  };
->>>>>>> 5b5058c3e16e07d1a2d462924acbc2009bbcbd78
+  useTrackPageview({ path: "/" });
 
   if (!posts) {
     return (
@@ -63,34 +64,17 @@ export default function HomePage() {
   const TOPICS = [...new Set(posts.flatMap((post) => post.tags))];
   const [featured, ...rest] = posts;
 
-  if (!featured) {
-    return (
-      <div className="home-shell" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ color: "#7a8fa6", fontFamily: "var(--font-mono, monospace)", fontSize: "0.78rem" }}>No posts yet.</span>
-      </div>
-    );
-  }
-
   return (
     <div className="home-shell">
       <header className="home-topbar">
         <Link href="/" className="home-brand">
           TERMINUS
         </Link>
-<<<<<<< HEAD
         <nav className="home-nav">
           <Link href="/" className="active">
-            Blog
+            Essays
           </Link>
-          <a href="https://github.com/edonD" target="_blank" rel="noopener">
-            GitHub
-          </a>
-=======
-        <nav className="topbar-nav">
-          <Link href="/" className="active">Blog</Link>
-          <a href="https://x.com/edon_d" target="_blank" rel="noopener">X</a>
->>>>>>> 5b5058c3e16e07d1a2d462924acbc2009bbcbd78
-          <a href="mailto:hello@terminus.blog">Contact</a>
+          <Link href="/contact">Contact</Link>
         </nav>
       </header>
 
@@ -113,96 +97,67 @@ export default function HomePage() {
               <p className="home-kicker">Personal notebook by {PERSONAL_PROFILE.name}</p>
               <h1>Signal over noise.</h1>
               <p className="home-subtitle">
-                I am {PERSONAL_PROFILE.name}. I write essays on fintech
-                infrastructure, AI systems, and real lessons from building
-                products from first principles.
+                Going through life and learning things.
               </p>
             </div>
           </div>
-          <div className="home-topics" aria-label="Topics">
-            {TOPICS.map((topic) => (
-              <span key={topic} className="home-topic-pill">
-                {topic.toLowerCase()}
-              </span>
-            ))}
-          </div>
-        </section>
-
-<<<<<<< HEAD
-        <section className="home-featured" aria-labelledby="featured-heading">
-          <p id="featured-heading" className="home-section-label">
-            Featured
-          </p>
-          <Link href={`/post/${featured.slug}`} className="home-featured-link">
-            <div className="home-featured-meta">
-              <span>{featured.date}</span>
-              <span>{featured.readTime}</span>
-              <span>{featured.wordCount} words</span>
+          {TOPICS.length > 0 && (
+            <div className="home-topics" aria-label="Topics">
+              {TOPICS.slice(0, 3).map((topic, i) => (
+                <span key={topic}>
+                  {i > 0 && " · "}
+                  {topic.toLowerCase()}
+                </span>
+              ))}
             </div>
-            <h2>{featured.title}</h2>
-            <p>{featured.excerpt}</p>
-            <span className="home-featured-cta">Read essay {"->"}</span>
-          </Link>
+          )}
         </section>
 
-        <section className="home-archive" aria-labelledby="archive-heading">
-          <div className="home-archive-head">
-            <p id="archive-heading" className="home-section-label">
-              Archive
+        {featured && (
+          <section className="home-featured" aria-labelledby="featured-heading">
+            <p id="featured-heading" className="home-section-label">
+              Featured
             </p>
-            <span>{posts.length} essays</span>
+            <Link href={`/post/${featured.slug}`} className="home-featured-link">
+              <div className="home-featured-meta">
+                <span>{featured.date}</span>
+                <span>{featured.readTime}</span>
+                <span>{featured.wordCount} words</span>
+              </div>
+              <h2>{featured.title}</h2>
+              {featured.excerpt && <p>{featured.excerpt}</p>}
+              {getBodyPreview(featured) && (
+                <p className="home-body-preview">{getBodyPreview(featured)}</p>
+              )}
+              <span className="home-featured-cta">Read essay →</span>
+            </Link>
+          </section>
+        )}
+
+        {featured ? (
+          <section className="home-archive" aria-labelledby="archive-heading">
+            <div className="home-archive-head">
+              <p id="archive-heading" className="home-section-label">
+                Archive
+              </p>
+              <span>{posts.length} essays</span>
+            </div>
+            <ul className="home-post-list">
+              <PostRow post={featured} />
+              {rest.map((post) => (
+                <PostRow key={post.slug} post={post} />
+              ))}
+            </ul>
+          </section>
+        ) : (
+          <div style={{ textAlign: "center", padding: "60px 0", color: "var(--muted)", fontFamily: "var(--font-mono)", fontSize: "0.78rem" }}>
+            No posts yet.
           </div>
-          <ul className="home-post-list">
-            <PostRow post={featured} />
-            {rest.map((post) => (
-              <PostRow key={post.slug} post={post} />
-            ))}
-          </ul>
-        </section>
+        )}
       </main>
 
       <footer className="home-footer">
-        TERMINUS | {new Date().getFullYear()} | Built with conviction
-=======
-      {/* ── Subscribe ── */}
-      <section className="subscribe-section">
-        <div className="subscribe-box">
-          <span className="subscribe-icon">◉</span>
-          <h3>Get new posts delivered to your inbox</h3>
-          <p>No spam. Unsubscribe anytime. Just signal.</p>
-          {subscribed ? (
-            <div className="subscribe-success">
-              <span>✓</span> You're in. Welcome to the terminal.
-            </div>
-          ) : (
-            <form className="subscribe-form" onSubmit={handleSubscribe}>
-              <input
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-              <button type="submit" className="btn btn-primary btn-sm">Subscribe</button>
-            </form>
-          )}
-        </div>
-      </section>
-
-      {/* ── Footer ── */}
-      <footer style={{
-        position: "relative",
-        zIndex: 1,
-        textAlign: "center",
-        padding: "40px 24px",
-        borderTop: "1px solid var(--line)",
-        fontSize: "0.6rem",
-        color: "var(--muted)",
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-      }}>
-        TERMINUS · {new Date().getFullYear()} · Built with conviction
->>>>>>> 5b5058c3e16e07d1a2d462924acbc2009bbcbd78
+        Set in Playfair Display · Written in Munich · Built with conviction
       </footer>
     </div>
   );

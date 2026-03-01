@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 28px;
-  background: rgba(5, 6, 8, 0.82);
+  background: rgba(245, 240, 232, 0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
@@ -32,7 +32,7 @@
   height: 8px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 12px rgba(87, 241, 210, 0.5);
+  box-shadow: 0 0 12px rgba(196, 122, 42, 0.4);
   animation: breathe 4s ease-in-out infinite;
 }
 
@@ -65,7 +65,7 @@
   padding: 5px 12px;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
-  background: rgba(15, 21, 28, 0.6);
+  background: rgba(228, 221, 210, 0.6);
   color: var(--muted);
   font-size: 0.62rem;
   text-transform: uppercase;

@@ -20,4 +20,22 @@ export default defineSchema({
     })
         .index("by_slug", ["slug"])
         .index("by_status", ["status"]),
+
+    pageviews: defineTable({
+        path: v.string(),
+        slug: v.optional(v.string()),
+        postId: v.optional(v.id("posts")),
+        timestamp: v.number(),
+        sessionId: v.string(),
+        referrer: v.optional(v.string()),
+        deviceType: v.optional(v.string()),
+        browser: v.optional(v.string()),
+        os: v.optional(v.string()),
+        screenWidth: v.optional(v.number()),
+        country: v.optional(v.string()),
+    })
+        .index("by_timestamp", ["timestamp"])
+        .index("by_path_timestamp", ["path", "timestamp"])
+        .index("by_slug_timestamp", ["slug", "timestamp"])
+        .index("by_session", ["sessionId"]),
 });

@@ -88,10 +88,59 @@ function CommandBar({ open, onClose }) {
     );
 }
 
+/* ═══ DAILY CHART COMPONENT ═══ */
+function DailyChart({ data }) {
+    if (!data || data.length === 0) return null;
+    const maxViews = Math.max(...data.map((d) => d.views), 1);
+    const barW = Math.max(4, Math.floor(580 / data.length) - 2);
+    const chartH = 120;
+
+    return (
+        <div className="analytics-chart">
+            <div className="analytics-chart-labels">
+                <span>{maxViews}</span>
+                <span>{Math.round(maxViews / 2)}</span>
+                <span>0</span>
+            </div>
+            <svg width="100%" height={chartH} viewBox={`0 0 ${data.length * (barW + 2)} ${chartH}`} preserveAspectRatio="none">
+                {data.map((d, i) => {
+                    const h = Math.max(1, (d.views / maxViews) * (chartH - 4));
+                    return (
+                        <rect
+                            key={i}
+                            x={i * (barW + 2)}
+                            y={chartH - h}
+                            width={barW}
+                            height={h}
+                            rx={2}
+                            fill="var(--accent)"
+                            opacity={0.7}
+                        >
+                            <title>{d.date}: {d.views} views, {d.visitors} visitors</title>
+                        </rect>
+                    );
+                })}
+            </svg>
+            <div className="analytics-bars">
+                <span>{data[0]?.date}</span>
+                <span>{data[data.length - 1]?.date}</span>
+            </div>
+        </div>
+    );
+}
+
 /* ═══ DASHBOARD PAGE ═══ */
 export default function WriteDashboard() {
     const posts = useQuery(api.posts.list);
     const deletePost = useMutation(api.posts.remove);
+
+    // Analytics queries
+    const sparklines = useQuery(api.analytics.allPostSparklines, { days: 7 });
+    const analyticsSummary = useQuery(api.analytics.summary);
+    const dailyData = useQuery(api.analytics.dailyViews, { days: 30 });
+    const topPagesData = useQuery(api.analytics.topPages, { days: 30, limit: 5 });
+    const referrerData = useQuery(api.analytics.referrerBreakdown, { days: 30 });
+    const deviceData = useQuery(api.analytics.deviceBreakdown, { days: 30 });
 
     const [searchQuery, setSearchQuery] = useState("");
     const [sortKey, setSortKey] = useState("lastEdited");
@@ -145,13 +194,11 @@ export default function WriteDashboard() {
     const publishedCount = allPosts.filter(p => p.status === "published").length;
     const draftCount = allPosts.filter(p => p.status === "draft").length;
 
-    const sparkData = useMemo(() => {
-        const data = {};
-        allPosts.forEach(p => {
-            data[p._id] = Array.from({ length: 7 }, () => Math.floor(Math.random() * p.views / 7 + Math.random() * 20));
-        });
-        return data;
-    }, [allPosts]);
+    // Real weekly delta
+    const weekDelta = analyticsSummary?.weekDelta ?? null;
+    const weekDeltaStr = weekDelta !== null
+        ? `${weekDelta >= 0 ? "↑" : "↓"} ${Math.abs(weekDelta)}% this week`
+        : "";
 
     if (!posts) {
         return (
@@ -216,7 +263,7 @@ export default function WriteDashboard() {
                         <div>
                             <div className="dash-stat-value">{totalViews.toLocaleString()}</div>
                             <div className="dash-stat-label">Total Views</div>
-                            <div className="dash-stat-delta">↑ 12% this week</div>
+                            {weekDeltaStr && <div className="dash-stat-delta">{weekDeltaStr}</div>}
                         </div>
                     </div>
                 </section>
@@ -238,6 +285,77 @@ export default function WriteDashboard() {
                         <div className="dash-quick-label">Command Bar</div>
                         <p>Quick access to all actions. Press ⌘K anytime.</p>
                     </button>
+                </section>
+
+                {/* ── Analytics ── */}
+                <section className="dash-analytics">
+                    <div className="dash-posts-title-row">
+                        <h2>Analytics</h2>
+                        <span className="dash-posts-count">Last 30 days</span>
+                    </div>
+
+                    <DailyChart data={dailyData || []} />
+
+                    <div className="analytics-panels">
+                        {/* Top Pages */}
+                        <div className="analytics-panel">
+                            <h3>Top Pages</h3>
+                            <div className="analytics-list">
+                                {(topPagesData || []).map((p) => (
+                                    <div key={p.path} className="analytics-list-item">
+                                        <span className="analytics-list-path">{p.path}</span>
+                                        <span className="analytics-list-count">{p.views} views · {p.visitors} visitors</span>
+                                    </div>
+                                ))}
+                                {(!topPagesData || topPagesData.length === 0) && (
+                                    <div className="analytics-list-empty">No data yet</div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Referrers */}
+                        <div className="analytics-panel">
+                            <h3>Referrers</h3>
+                            <div className="analytics-list">
+                                {(referrerData || []).slice(0, 5).map((r) => {
+                                    const maxRef = referrerData?.[0]?.count || 1;
+                                    return (
+                                        <div key={r.source} className="analytics-bar-wrap">
+                                            <span className="analytics-list-path">{r.source}</span>
+                                            <div className="analytics-bar" style={{ width: `${(r.count / maxRef) * 100}%` }} />
+                                            <span className="analytics-list-count">{r.count}</span>
+                                        </div>
+                                    );
+                                })}
+                                {(!referrerData || referrerData.length === 0) && (
+                                    <div className="analytics-list-empty">No data yet</div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Devices */}
+                        <div className="analytics-panel">
+                            <h3>Devices</h3>
+                            <div className="analytics-device-pills">
+                                {(deviceData?.devices || []).map((d) => (
+                                    <span key={d.name} className="analytics-device-pill">
+                                        {d.name} <strong>{d.count}</strong>
+                                    </span>
+                                ))}
+                                {(deviceData?.browsers || []).map((b) => (
+                                    <span key={b.name} className="analytics-device-pill">
+                                        {b.name} <strong>{b.count}</strong>
+                                    </span>
+                                ))}
+                                {(deviceData?.countries || []).slice(0, 5).map((c) => (
+                                    <span key={c.name} className="analytics-device-pill">
+                                        {c.name} <strong>{c.count}</strong>
+                                    </span>
+                                ))}
+                                {!deviceData && <span className="analytics-list-empty">No data yet</span>}
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 {/* ── Post List ── */}
@@ -315,7 +433,7 @@ export default function WriteDashboard() {
                                     </div>
                                 </div>
                                 <div className="dash-post-card-right">
-                                    {post.views > 0 && <Sparkline data={sparkData[post._id] || [0]} />}
+                                    {post.views > 0 && sparklines?.[post.slug] && <Sparkline data={sparklines[post.slug]} />}
                                     <button
                                         className="dash-post-delete"
                                         title="Delete post"

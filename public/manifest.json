@@ -1,0 +1,21 @@
+{
+  "name": "Terminus",
+  "short_name": "Terminus",
+  "description": "Personal blog & writer dashboard",
+  "start_url": "/write?secret=f0efaeb40c9b6e89106e378bc29ce6362c89283ef86f156ef9fc6b0284841cea",
+  "display": "standalone",
+  "background_color": "#f5f0e8",
+  "theme_color": "#f5f0e8",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

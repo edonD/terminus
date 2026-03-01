@@ -4,1309 +4,57 @@ import { useMemo, useState, useCallback, useEffect, useRef, use } from "react";
 import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import CommandBar from "./components/CommandBar";
+import TitleGenModal from "./components/TitleGenModal";
+import ResearchPanel from "./components/ResearchPanel";
+import ArchitectPanel from "./components/ArchitectPanel";
+import AiInlinePanel from "./components/AiInlinePanel";
+import EditorTopbar from "./components/EditorTopbar";
+import EditorFooter from "./components/EditorFooter";
 
 /* ═══════════════════════════════════════════════════
-<<<<<<< HEAD
-   DATA & CONSTANTS
-   ═══════════════════════════════════════════════════ */
-
-const STARTER_TEMPLATES = [
-  {
-    id: "analysis",
-    name: "Deep Analysis",
-    icon: "◈",
-    subtitle: "Argument-driven essay with evidence.",
-    title: "The Quiet Shift Reshaping [Your Industry]",
-    deck: "A first-principles analysis of where value is moving and why now.",
-    blocks: [
-      { type: "heading", content: "The Core Shift" },
-      { type: "paragraph", content: "Most people miss this because they look at surface trends instead of structural incentives." },
-      { type: "heading-h3", content: "Evidence" },
-      { type: "paragraph", content: "Insert strongest data point and source." },
-      { type: "heading-h3", content: "What This Means" },
-      { type: "paragraph", content: "Explain implications for founders, operators, and builders." },
-    ],
-  },
-  {
-    id: "tutorial",
-    name: "How-to Guide",
-    icon: "⚡",
-    subtitle: "Step-by-step execution guide.",
-    title: "How to Implement [Topic] Without Overengineering",
-    deck: "A practical system you can apply in one afternoon.",
-    blocks: [
-      { type: "heading", content: "Goal and Constraints" },
-      { type: "paragraph", content: "Define desired outcome, limits, and success criteria." },
-      { type: "heading-h3", content: "Step-by-Step" },
-      { type: "paragraph", content: "Step 1: ... Step 2: ... Step 3: ..." },
-      { type: "heading-h3", content: "Failure Modes" },
-      { type: "paragraph", content: "List common mistakes and how to avoid them." },
-    ],
-  },
-  {
-    id: "contrarian",
-    name: "Contrarian Take",
-    icon: "⟁",
-    subtitle: "Challenge consensus with proof.",
-    title: "The Popular Advice That Is Quietly Failing",
-    deck: "A contrarian argument backed by practical evidence.",
-    blocks: [
-      { type: "heading", content: "The Consensus View" },
-      { type: "paragraph", content: "State the common belief as fairly as possible." },
-      { type: "heading-h3", content: "Why It Breaks" },
-      { type: "paragraph", content: "Show where real-world constraints invalidate the theory." },
-      { type: "heading-h3", content: "A Better Approach" },
-      { type: "paragraph", content: "Propose an alternative and explain tradeoffs." },
-    ],
-  },
-];
-
-const SLASH_ITEMS = [
-  { type: "paragraph", icon: "¶", label: "Text", desc: "Plain paragraph" },
-  { type: "heading", icon: "H2", label: "Heading", desc: "Section heading" },
-  { type: "heading-h3", icon: "H3", label: "Subheading", desc: "Smaller heading" },
-  { type: "quote", icon: "❝", label: "Quote", desc: "Blockquote" },
-  { type: "code", icon: "</>", label: "Code", desc: "Code block" },
-  { type: "divider", icon: "—", label: "Divider", desc: "Horizontal rule" },
-];
-
-const COPILOT_ACTIONS = [
-  { id: "improve", label: "✦ Improve", desc: "Better clarity & polish" },
-  { id: "expand", label: "↔ Expand", desc: "Add detail & depth" },
-  { id: "shorten", label: "⊟ Shorten", desc: "Make concise" },
-  { id: "grammar", label: "Aa Fix", desc: "Grammar & spelling" },
-  { id: "engaging", label: "⚡ Engaging", desc: "More compelling" },
-  { id: "professional", label: "◆ Pro", desc: "Authoritative tone" },
-];
-
-const INTENT_OPTIONS = [
-  { value: "explain", label: "Explain clearly" },
-  { value: "strategy", label: "Strategic memo" },
-  { value: "tutorial", label: "How-to guide" },
-  { value: "contrarian", label: "Contrarian angle" },
-];
-
-const AUDIENCE_OPTIONS = [
-  { value: "general", label: "General readers" },
-  { value: "founders", label: "Founders / operators" },
-  { value: "engineers", label: "Engineers" },
-  { value: "investors", label: "Investors / analysts" },
-];
-
-const DEPTH_OPTIONS = [
-  { value: "fast", label: "Fast scan" },
-  { value: "balanced", label: "Balanced" },
-  { value: "deep", label: "Deep research" },
-];
-
-/* ═══════════════════════════════════════════════════
-   HELPERS
-   ═══════════════════════════════════════════════════ */
-
-function makeId(prefix = "b") {
-  return `${prefix}_${Math.random().toString(36).slice(2, 8)}_${Date.now()}`;
-}
-
-function withIds(blocks) {
-  return blocks.map((block) => ({ ...block, id: makeId() }));
-}
-
-function blockToMarkdown(block) {
-  if (block.type === "heading") return `## ${block.content}`;
-  if (block.type === "heading-h3") return `### ${block.content}`;
-  if (block.type === "quote") return `> ${block.content}`;
-  if (block.type === "code") return `\`\`\`\n${block.content}\n\`\`\``;
-  if (block.type === "divider") return "---";
-  return block.content;
-}
-
-function sourceToCitation(source) {
-  return `[${source.id}] ${source.title}\n${source.url}`;
-}
-
-function normalizeContent(value) {
-  return (value || "").replace(/\s+/g, " ").trim();
-}
-
-/* ═══════════════════════════════════════════════════
-   AUTO-RESIZE HOOK
-   ═══════════════════════════════════════════════════ */
-
-function useAutoResize(ref, value) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
-  }, [ref, value]);
-}
-
-/* ═══════════════════════════════════════════════════
-   PROGRESS RING
-   ═══════════════════════════════════════════════════ */
-
-function ProgressRing({ percent, size = 32, stroke = 2.5 }) {
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (percent / 100) * circumference;
-  return (
-    <svg className="progress-ring" width={size} height={size}>
-      <circle className="progress-ring-bg" cx={size / 2} cy={size / 2} r={radius} strokeWidth={stroke} fill="none" />
-      <circle className="progress-ring-fill" cx={size / 2} cy={size / 2} r={radius} strokeWidth={stroke} fill="none"
-        strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
-      <text x="50%" y="50%" textAnchor="middle" dy="0.35em" className="progress-ring-text">
-        {Math.round(percent)}%
-      </text>
-    </svg>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   AUTO-RESIZING TEXTAREA BLOCK
-   ═══════════════════════════════════════════════════ */
-
-function BlockTextarea({ block, onChange, onKeyDown, placeholder }) {
-  const ref = useRef(null);
-  useAutoResize(ref, block.content);
-
-  const typeClass =
-    block.type === "heading" ? "heading" :
-      block.type === "heading-h3" ? "heading-h3" :
-        block.type === "quote" ? "quote" :
-          block.type === "code" ? "code" : "";
-
-  return (
-    <textarea
-      ref={ref}
-      className={`ed-textarea ${typeClass}`}
-      value={block.content}
-      onChange={onChange}
-      onKeyDown={onKeyDown}
-      placeholder={placeholder}
-      rows={1}
-    />
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   COPILOT POPOVER — AI assistant per field
-   ═══════════════════════════════════════════════════ */
-
-function CopilotPopover({ fieldType, content, postTitle, postSubtitle, surroundingContext, onApply, onClose }) {
-  const [status, setStatus] = useState("idle"); // idle | loading | done | error
-  const [result, setResult] = useState("");
-  const [customPrompt, setCustomPrompt] = useState("");
-  const [error, setError] = useState("");
-  const customRef = useRef(null);
-
-  useEffect(() => {
-    if (customRef.current) customRef.current.focus();
-  }, []);
-
-  async function runAction(action, prompt) {
-    setStatus("loading");
-    setError("");
-    setResult("");
-    try {
-      const res = await fetch("/api/copilot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fieldType,
-          content,
-          action,
-          customPrompt: prompt || "",
-          postTitle,
-          postSubtitle,
-          surroundingContext,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Copilot request failed");
-      setResult(data.result);
-      setStatus("done");
-    } catch (err) {
-      setError(err.message);
-      setStatus("error");
-    }
-  }
-
-  function handleCustomSubmit(e) {
-    e.preventDefault();
-    if (customPrompt.trim()) runAction("custom", customPrompt.trim());
-  }
-
-  return (
-    <div className="copilot-popover">
-      <div className="copilot-header">
-        <span className="copilot-badge">✦ AI Copilot</span>
-        <span className="copilot-field-type">{fieldType}</span>
-        <button className="copilot-close" onClick={onClose}>×</button>
-      </div>
-
-      {/* Quick actions */}
-      <div className="copilot-actions">
-        {COPILOT_ACTIONS.map((a) => (
-          <button
-            key={a.id}
-            className="copilot-action-btn"
-            onClick={() => runAction(a.id)}
-            disabled={status === "loading"}
-            title={a.desc}
-          >
-            {a.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Custom prompt */}
-      <form className="copilot-custom" onSubmit={handleCustomSubmit}>
-        <input
-          ref={customRef}
-          className="copilot-input"
-          placeholder="Custom instruction…"
-          value={customPrompt}
-          onChange={(e) => setCustomPrompt(e.target.value)}
-          disabled={status === "loading"}
-        />
-        <button
-          type="submit"
-          className="copilot-send"
-          disabled={status === "loading" || !customPrompt.trim()}
-        >→</button>
-      </form>
-
-      {/* Loading state */}
-      {status === "loading" && (
-        <div className="copilot-loading">
-          <span className="spinner" /> Thinking…
-        </div>
-      )}
-
-      {/* Error */}
-      {status === "error" && (
-        <div className="copilot-error">{error}</div>
-      )}
-
-      {/* Result */}
-      {status === "done" && result && (
-        <div className="copilot-result">
-          <div className="copilot-result-label">Suggestion</div>
-          <div className="copilot-result-text">{result}</div>
-          <div className="copilot-result-actions">
-            <button className="ed-btn primary sm" onClick={() => { onApply(result); onClose(); }}>
-              ✓ Apply
-            </button>
-            <button className="ed-btn ghost sm" onClick={() => { navigator.clipboard.writeText(result); }}>
-              Copy
-            </button>
-            <button className="ed-btn ghost sm" onClick={onClose}>Dismiss</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════
-   EDITOR PAGE
-   ═══════════════════════════════════════════════════ */
-
-export default function EditorPage({ params }) {
-  const resolvedParams = use(params);
-  const isNew = resolvedParams.id === "new";
-
-  /* ── Convex ── */
-  const existingPost = useQuery(
-    api.posts.getById,
-    isNew ? "skip" : { id: resolvedParams.id }
-  );
-  const createPost = useMutation(api.posts.create);
-  const updatePost = useMutation(api.posts.update);
-  const [postId, setPostId] = useState(isNew ? null : resolvedParams.id);
-  const [initialized, setInitialized] = useState(isNew);
-
-  /* ── State ── */
-  const [title, setTitle] = useState("");
-  const [subtitle, setSubtitle] = useState("");
-  const [blocks, setBlocks] = useState(
-    withIds([{ type: "paragraph", content: "" }])
-  );
-
-  /* ── Load existing post data ── */
-  useEffect(() => {
-    if (!isNew && existingPost && !initialized) {
-      setTitle(existingPost.title || "");
-      setSubtitle(existingPost.subtitle || "");
-      if (existingPost.blocks && existingPost.blocks.length > 0) {
-        setBlocks(withIds(existingPost.blocks));
-      }
-      setInitialized(true);
-    }
-  }, [existingPost, isNew, initialized]);
-  const [saveStatus, setSaveStatus] = useState("saved");
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [sidebarTab, setSidebarTab] = useState("research");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-
-  // Slash command menu state
-  const [slashMenu, setSlashMenu] = useState(null);
-  const [slashIdx, setSlashIdx] = useState(0);
-
-  // Copilot state — which field has copilot open
-  const [copilotField, setCopilotField] = useState(null); // null | "title" | "subtitle" | blockId
-
-  // Research state
-  const [researchTopic, setResearchTopic] = useState("");
-  const [researchIntent, setResearchIntent] = useState("explain");
-  const [researchAudience, setResearchAudience] = useState("general");
-  const [researchDepth, setResearchDepth] = useState("balanced");
-  const [researchState, setResearchState] = useState("idle");
-  const [researchError, setResearchError] = useState("");
-  const [researchResult, setResearchResult] = useState(null);
-
-  // Refs
-  const titleRef = useRef(null);
-  const subtitleRef = useRef(null);
-  const editorRef = useRef(null);
-
-  useAutoResize(titleRef, title);
-  useAutoResize(subtitleRef, subtitle);
-
-  /* ── Derived ── */
-  const wordCount = useMemo(() => {
-    const text = [title, subtitle, ...blocks.map((b) => b.content)].join(" ");
-    return text.split(/\s+/).filter(Boolean).length;
-  }, [title, subtitle, blocks]);
-
-  const readTime = useMemo(() => Math.max(1, Math.ceil(wordCount / 250)), [wordCount]);
-
-  const compileChecks = useMemo(() => {
-    const headings = blocks.filter((b) => b.type === "heading" || b.type === "heading-h3").length;
-    const nonEmpty = blocks.filter((b) => normalizeContent(b.content)).length;
-    const sources = researchResult?.sources?.length || 0;
-    return [
-      { label: "Clear title", done: title.trim().length >= 12 },
-      { label: "Strong subtitle", done: subtitle.trim().length >= 30 },
-      { label: "3+ sections", done: headings >= 3 },
-      { label: "5+ content blocks", done: nonEmpty >= 5 },
-      { label: "5+ sources", done: sources >= 5 },
-    ];
-  }, [blocks, title, subtitle, researchResult]);
-
-  const checkPercent = useMemo(() => {
-    const done = compileChecks.filter((c) => c.done).length;
-    return Math.round((done / compileChecks.length) * 100);
-  }, [compileChecks]);
-
-  /* ── Slash menu filtering ── */
-  const filteredSlash = useMemo(() => {
-    if (!slashMenu) return SLASH_ITEMS;
-    const q = (slashMenu.filter || "").toLowerCase();
-    if (!q) return SLASH_ITEMS;
-    return SLASH_ITEMS.filter(
-      (item) => item.label.toLowerCase().includes(q) || item.type.includes(q)
-    );
-  }, [slashMenu]);
-
-  /* ── Surrounding context for copilot ── */
-  function getSurroundingContext(blockId) {
-    const idx = blocks.findIndex((b) => b.id === blockId);
-    if (idx === -1) return "";
-    const nearby = blocks.slice(Math.max(0, idx - 2), idx + 3);
-    return nearby.map((b) => `[${b.type}] ${b.content}`).join("\n");
-  }
-
-  /* ── Actions ── */
-  const markUnsaved = useCallback(() => setSaveStatus("unsaved"), []);
-
-  function updateBlock(id, content) {
-    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, content } : b)));
-    markUnsaved();
-  }
-
-  function updateBlockType(id, type) {
-    setBlocks((prev) => prev.map((b) => (b.id === id ? { ...b, type, content: b.type === "divider" ? "" : b.content } : b)));
-    markUnsaved();
-  }
-
-  function insertBlockAfter(id, type = "paragraph") {
-    const next = { id: makeId(), type, content: "" };
-    setBlocks((prev) => {
-      const idx = prev.findIndex((b) => b.id === id);
-      if (idx === -1) return [...prev, next];
-      const clone = [...prev];
-      clone.splice(idx + 1, 0, next);
-      return clone;
-    });
-    markUnsaved();
-  }
-
-  function removeBlock(id) {
-    setBlocks((prev) => (prev.length <= 1 ? prev : prev.filter((b) => b.id !== id)));
-    markUnsaved();
-  }
-
-  function addBlockToEnd(type = "paragraph") {
-    setBlocks((prev) => [...prev, { id: makeId(), type, content: "" }]);
-    markUnsaved();
-  }
-
-  function applyTemplate(template) {
-    setSelectedTemplate(template.id);
-    setTitle(template.title);
-    setSubtitle(template.deck);
-    setBlocks(withIds(template.blocks));
-    markUnsaved();
-  }
-
-  /* ── Slash command handlers ── */
-  function openSlashMenu(blockId, textarea) {
-    const rect = textarea.getBoundingClientRect();
-    const edRect = editorRef.current?.getBoundingClientRect() || { top: 0, left: 0 };
-    setSlashMenu({
-      blockId,
-      top: rect.bottom - edRect.top + 4,
-      left: rect.left - edRect.left,
-      filter: "",
-    });
-    setSlashIdx(0);
-  }
-
-  function selectSlashItem(item) {
-    if (!slashMenu) return;
-    updateBlockType(slashMenu.blockId, item.type);
-    updateBlock(slashMenu.blockId, "");
-    setSlashMenu(null);
-  }
-
-  function closeSlashMenu() {
-    setSlashMenu(null);
-    setSlashIdx(0);
-  }
-
-  /* ── Block keyboard handler ── */
-  function handleBlockKeyDown(e, block) {
-    if (slashMenu && slashMenu.blockId === block.id) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, filteredSlash.length - 1));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        if (filteredSlash[slashIdx]) selectSlashItem(filteredSlash[slashIdx]);
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        closeSlashMenu();
-      }
-      return;
-    }
-
-    if (e.key === "Enter" && !e.shiftKey && block.type !== "code") {
-      e.preventDefault();
-      insertBlockAfter(block.id);
-    }
-
-    if (e.key === "Backspace" && !block.content && blocks.length > 1) {
-      e.preventDefault();
-      removeBlock(block.id);
-    }
-  }
-
-  function handleBlockInput(e, block) {
-    const val = e.target.value;
-    updateBlock(block.id, val);
-
-    if (val === "/") {
-      openSlashMenu(block.id, e.target);
-    } else if (val.startsWith("/") && slashMenu && slashMenu.blockId === block.id) {
-      setSlashMenu((prev) => ({ ...prev, filter: val.slice(1) }));
-      setSlashIdx(0);
-    } else if (slashMenu && slashMenu.blockId === block.id && !val.startsWith("/")) {
-      closeSlashMenu();
-    }
-  }
-
-  /* ── Research ── */
-  const [researchStage, setResearchStage] = useState(""); // planning | searching | analyzing | synthesizing | done
-  const [researchPanelOpen, setResearchPanelOpen] = useState(false);
-  const [followUpMessages, setFollowUpMessages] = useState([]);
-  const [followUpInput, setFollowUpInput] = useState("");
-  const [followUpLoading, setFollowUpLoading] = useState(false);
-
-  async function runResearchAgent() {
-    if (!researchTopic.trim()) {
-      setResearchError("Enter a topic first.");
-      setResearchState("error");
-      return;
-    }
-    setResearchState("loading");
-    setResearchError("");
-    setResearchResult(null);
-    setFollowUpMessages([]);
-
-    // Staged progress
-    setResearchStage("planning");
-    await new Promise((r) => setTimeout(r, 600));
-    setResearchStage("searching");
-
-    try {
-      const res = await fetch("/api/research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: researchTopic, intent: researchIntent,
-          audience: researchAudience, depth: researchDepth, maxSources: 10,
-        }),
-      });
-
-      setResearchStage("analyzing");
-      await new Promise((r) => setTimeout(r, 400));
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || data?.details || "Research failed.");
-
-      setResearchStage("synthesizing");
-      await new Promise((r) => setTimeout(r, 300));
-
-      setResearchResult(data);
-      setResearchState("done");
-      setResearchStage("done");
-      setResearchPanelOpen(true); // Auto-open the artifact panel
-      if (!title.trim() && data?.synthesis?.suggestedTitle) setTitle(data.synthesis.suggestedTitle);
-      if (!subtitle.trim() && data?.synthesis?.thesis) setSubtitle(data.synthesis.thesis.slice(0, 180));
-      markUnsaved();
-    } catch (err) {
-      setResearchError(err.message || "Research agent failed.");
-      setResearchState("error");
-      setResearchStage("");
-    }
-  }
-
-  async function askFollowUp() {
-    if (!followUpInput.trim() || !researchResult) return;
-    const question = followUpInput.trim();
-    setFollowUpInput("");
-    setFollowUpMessages((prev) => [...prev, { role: "user", text: question }]);
-    setFollowUpLoading(true);
-
-    const context = [
-      `Research topic: ${researchTopic}`,
-      `Thesis: ${researchResult.synthesis?.thesis || ""}`,
-      `Key takeaways: ${(researchResult.synthesis?.keyTakeaways || []).join("; ")}`,
-      `Sources: ${(researchResult.sources || []).map((s) => `${s.id}: ${s.title} (${s.domain})`).join("; ")}`,
-    ].join("\n");
-
-    try {
-      const res = await fetch("/api/copilot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fieldType: "paragraph",
-          content: context,
-          action: "custom",
-          customPrompt: `Based on this research, answer: ${question}`,
-          postTitle: title,
-          postSubtitle: subtitle,
-          surroundingContext: context,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Follow-up failed");
-      setFollowUpMessages((prev) => [...prev, { role: "assistant", text: data.result }]);
-    } catch (err) {
-      setFollowUpMessages((prev) => [...prev, { role: "assistant", text: `Error: ${err.message}` }]);
-    }
-    setFollowUpLoading(false);
-  }
-
-  function insertFollowUpAsBlock(text) {
-    setBlocks((prev) => [...prev, { id: makeId(), type: "paragraph", content: text }]);
-    markUnsaved();
-  }
-
-  function buildDraftFromResearch() {
-    if (!researchResult?.synthesis) return;
-    const s = researchResult.synthesis;
-    const next = [];
-    const outline = Array.isArray(s.outline) ? s.outline : [];
-    const starters = Array.isArray(s.sectionStarters) ? s.sectionStarters : [];
-    const takeaways = Array.isArray(s.keyTakeaways) ? s.keyTakeaways : [];
-
-    outline.forEach((section, i) => {
-      next.push({ id: makeId(), type: "heading", content: section });
-      next.push({ id: makeId(), type: "paragraph", content: starters[i] || "Expand with source-backed detail." });
-    });
-    if (takeaways.length) {
-      next.push({ id: makeId(), type: "heading-h3", content: "Key Evidence" });
-      takeaways.slice(0, 6).forEach((t) => next.push({ id: makeId(), type: "paragraph", content: `- ${t}` }));
-    }
-    if (researchResult.sources?.length) {
-      next.push({ id: makeId(), type: "heading-h3", content: "Sources" });
-      researchResult.sources.slice(0, 8).forEach((src) =>
-        next.push({ id: makeId(), type: "paragraph", content: sourceToCitation(src) })
-      );
-    }
-    setTitle(s.suggestedTitle || title);
-    setSubtitle(s.thesis || subtitle);
-    setBlocks(next.length ? next : blocks);
-    markUnsaved();
-  }
-
-  function insertResearchSummary() {
-    if (!researchResult?.synthesis) return;
-    const s = researchResult.synthesis;
-    const summary = normalizeContent(s.summaryMarkdown || s.thesis || "");
-    setBlocks((prev) => [
-      ...prev,
-      { id: makeId(), type: "heading-h3", content: "Research Summary" },
-      { id: makeId(), type: "paragraph", content: summary },
-    ]);
-    markUnsaved();
-  }
-
-  async function copySourcesToClipboard() {
-    if (!researchResult?.sources?.length) return;
-    await navigator.clipboard.writeText(
-      researchResult.sources.map(sourceToCitation).join("\n\n")
-    );
-  }
-
-  async function exportMarkdown() {
-    const body = blocks.map(blockToMarkdown).join("\n\n");
-    await navigator.clipboard.writeText(`# ${title || "Untitled"}\n\n${subtitle || ""}\n\n${body}`.trim());
-  }
-
-  async function saveDraft() {
-    setSaveStatus("saving");
-    try {
-      const slug = (title || "untitled").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const postData = {
-        title: title || "Untitled",
-        subtitle: subtitle || "",
-        excerpt: subtitle || title || "",
-        slug,
-        date: new Date().toISOString().slice(0, 10).replace(/-/g, "."),
-        readTime: `${readTime} min`,
-        wordCount,
-        tags: [],
-        status: "draft",
-        views: 0,
-        blocks: blocks.map(({ type, content }) => ({ type, content })),
-      };
-
-      if (postId) {
-        await updatePost({ id: postId, ...postData });
-      } else {
-        const newId = await createPost(postData);
-        setPostId(newId);
-      }
-      setSaveStatus("saved");
-    } catch (err) {
-      console.error("Save failed:", err);
-      setSaveStatus("unsaved");
-    }
-  }
-
-  async function publishPost() {
-    setSaveStatus("saving");
-    try {
-      const slug = (title || "untitled").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const content = blocks.map(b => {
-        if (b.type === "heading") return `<h2>${b.content}</h2>`;
-        if (b.type === "heading-h3") return `<h3>${b.content}</h3>`;
-        if (b.type === "quote") return `<blockquote>${b.content}</blockquote>`;
-        if (b.type === "code") return `<pre><code>${b.content}</code></pre>`;
-        if (b.type === "divider") return `<hr/>`;
-        return `<p>${b.content}</p>`;
-      }).join("\n");
-
-      const postData = {
-        title: title || "Untitled",
-        subtitle: subtitle || "",
-        excerpt: subtitle || title || "",
-        content,
-        slug,
-        date: new Date().toISOString().slice(0, 10).replace(/-/g, "."),
-        readTime: `${readTime} min`,
-        wordCount,
-        tags: [],
-        status: "published",
-        views: 0,
-        blocks: blocks.map(({ type, content }) => ({ type, content })),
-      };
-
-      if (postId) {
-        await updatePost({ id: postId, ...postData });
-      } else {
-        const newId = await createPost(postData);
-        setPostId(newId);
-      }
-      setSaveStatus("saved");
-    } catch (err) {
-      console.error("Publish failed:", err);
-      setSaveStatus("unsaved");
-    }
-  }
-
-  /* ── Click-away handlers ── */
-  useEffect(() => {
-    if (!slashMenu) return;
-    function handleClick(e) {
-      if (!e.target.closest(".ed-slash-menu")) closeSlashMenu();
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [slashMenu]);
-
-  useEffect(() => {
-    if (!copilotField) return;
-    function handleClick(e) {
-      if (!e.target.closest(".copilot-popover") && !e.target.closest(".copilot-trigger")) {
-        setCopilotField(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [copilotField]);
-
-  /* ═══════════════════════════════════════════════════
-     RENDER
-     ═══════════════════════════════════════════════════ */
-
-  return (
-    <div className="ed" ref={editorRef}>
-      {/* ── Top Bar ── */}
-      <header className="ed-topbar">
-        <div className="ed-topbar-left">
-          <Link href="/write" className="ed-back">← Back</Link>
-          <span className="ed-sep" />
-          <span className={`ed-save-status ${saveStatus}`}>
-            {saveStatus === "saved" ? "Saved" : saveStatus === "saving" ? "Saving…" : "Unsaved changes"}
-          </span>
-        </div>
-        <div className="ed-topbar-center">
-          <span className="ed-wc">{wordCount} words · {readTime} min read</span>
-        </div>
-        <div className="ed-topbar-right">
-          <button className="ed-btn ghost" onClick={exportMarkdown}>Export</button>
-          <button className="ed-btn ghost" onClick={saveDraft}>Save</button>
-          <button className="ed-btn primary" onClick={publishPost}>Publish</button>
-          <span className="ed-sep" />
-          <button
-            className={`ed-btn icon ${sidebarOpen ? "active" : ""}`}
-            onClick={() => setSidebarOpen((o) => !o)}
-            title="Toggle sidebar"
-          >
-            ◫
-          </button>
-        </div>
-      </header>
-
-      {/* ── Main Area ── */}
-      <div className={`ed-body ${sidebarOpen ? "with-sidebar" : ""} ${researchPanelOpen && researchResult ? "with-research" : ""}`}>
-
-        {/* ── Writing Surface ── */}
-        <main className="ed-main">
-          {/* Template strip for new posts */}
-          {isNew && (
-            <div className="ed-templates">
-              <span className="ed-templates-label">Start with</span>
-              {STARTER_TEMPLATES.map((t) => (
-                <button
-                  key={t.id}
-                  className={`ed-template-chip ${selectedTemplate === t.id ? "active" : ""}`}
-                  onClick={() => applyTemplate(t)}
-                >
-                  <span className="ed-template-icon">{t.icon}</span>
-                  {t.name}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Title with copilot */}
-          <div className="ed-head">
-            <div className="ed-field-wrap">
-              <textarea
-                ref={titleRef}
-                className="ed-title"
-                placeholder="Title"
-                value={title}
-                onChange={(e) => { setTitle(e.target.value); markUnsaved(); }}
-                rows={1}
-              />
-              <button
-                className={`copilot-trigger ${copilotField === "title" ? "active" : ""}`}
-                onClick={() => setCopilotField(copilotField === "title" ? null : "title")}
-                title="AI Copilot"
-              >✦</button>
-              {copilotField === "title" && (
-                <CopilotPopover
-                  fieldType="title"
-                  content={title}
-                  postTitle={title}
-                  postSubtitle={subtitle}
-                  surroundingContext=""
-                  onApply={(text) => { setTitle(text); markUnsaved(); }}
-                  onClose={() => setCopilotField(null)}
-                />
-              )}
-            </div>
-
-            {/* Subtitle with copilot */}
-            <div className="ed-field-wrap">
-              <textarea
-                ref={subtitleRef}
-                className="ed-subtitle"
-                placeholder="Tell your story…"
-                value={subtitle}
-                onChange={(e) => { setSubtitle(e.target.value); markUnsaved(); }}
-                rows={1}
-              />
-              <button
-                className={`copilot-trigger ${copilotField === "subtitle" ? "active" : ""}`}
-                onClick={() => setCopilotField(copilotField === "subtitle" ? null : "subtitle")}
-                title="AI Copilot"
-              >✦</button>
-              {copilotField === "subtitle" && (
-                <CopilotPopover
-                  fieldType="subtitle"
-                  content={subtitle}
-                  postTitle={title}
-                  postSubtitle={subtitle}
-                  surroundingContext=""
-                  onApply={(text) => { setSubtitle(text); markUnsaved(); }}
-                  onClose={() => setCopilotField(null)}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Blocks with copilot + insert bars */}
-          <div className="ed-blocks">
-            {blocks.map((block, idx) => (
-              <div key={block.id}>
-                {/* ── Insert bar ABOVE each block (except first) ── */}
-                {idx > 0 && (
-                  <div className="ed-insert-bar" onClick={() => insertBlockAfter(blocks[idx - 1].id)}>
-                    <span className="ed-insert-line" />
-                    <button className="ed-insert-btn" title="Add block here">+</button>
-                    <span className="ed-insert-line" />
-                  </div>
-                )}
-
-                <div
-                  className={`ed-block ${block.type === "divider" ? "is-divider" : ""} type-${block.type}`}
-                >
-                  {/* ── Delete button (left side, visible on hover) ── */}
-                  {blocks.length > 1 && (
-                    <button className="ed-block-delete" onClick={() => removeBlock(block.id)} title="Delete this block">
-                      × Delete
-                    </button>
-                  )}
-
-                  {/* ── Block content ── */}
-                  <div className="ed-block-content">
-                    {block.type === "divider" ? (
-                      <hr className="ed-hr" />
-                    ) : (
-                      <BlockTextarea
-                        block={block}
-                        onChange={(e) => handleBlockInput(e, block)}
-                        onKeyDown={(e) => handleBlockKeyDown(e, block)}
-                        placeholder={
-                          block.type === "heading" ? "Heading"
-                            : block.type === "heading-h3" ? "Subheading"
-                              : block.type === "quote" ? "Quote"
-                                : block.type === "code" ? "Code"
-                                  : "Type '/' for commands…"
-                        }
-                      />
-                    )}
-                  </div>
-
-                  {/* ── Copilot trigger (right side) ── */}
-                  {block.type !== "divider" && (
-                    <button
-                      className={`copilot-trigger ${copilotField === block.id ? "active" : ""}`}
-                      onClick={() => setCopilotField(copilotField === block.id ? null : block.id)}
-                      title="AI Copilot"
-                    >✦</button>
-                  )}
-
-                  {/* Copilot popover for this block */}
-                  {copilotField === block.id && (
-                    <CopilotPopover
-                      fieldType={block.type}
-                      content={block.content}
-                      postTitle={title}
-                      postSubtitle={subtitle}
-                      surroundingContext={getSurroundingContext(block.id)}
-                      onApply={(text) => { updateBlock(block.id, text); }}
-                      onClose={() => setCopilotField(null)}
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Add block at end — big obvious button */}
-          <button className="ed-add-block-btn" onClick={() => addBlockToEnd()}>
-            <span className="ed-add-block-icon">+</span>
-            <span>Add a new block</span>
-            <kbd className="ed-add-block-hint">or press Enter</kbd>
-          </button>
-
-          {/* Slash command menu overlay */}
-          {slashMenu && filteredSlash.length > 0 && (
-            <div
-              className="ed-slash-menu"
-              style={{ top: slashMenu.top, left: slashMenu.left }}
-            >
-              <div className="ed-slash-header">
-                <span>Blocks</span>
-                <kbd>↑↓ Enter</kbd>
-              </div>
-              {filteredSlash.map((item, i) => (
-                <button
-                  key={item.type}
-                  className={`ed-slash-item ${i === slashIdx ? "active" : ""}`}
-                  onMouseDown={(e) => { e.preventDefault(); selectSlashItem(item); }}
-                  onMouseEnter={() => setSlashIdx(i)}
-                >
-                  <span className="ed-slash-icon">{item.icon}</span>
-                  <div>
-                    <span className="ed-slash-label">{item.label}</span>
-                    <span className="ed-slash-desc">{item.desc}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Footer stats */}
-          <div className="ed-footer">
-            <span>{wordCount} words</span>
-            <span>{readTime} min read</span>
-            <span>{blocks.length} blocks</span>
-            <span className="ed-mode-badge">
-              {researchResult ? "◈ research-backed" : "drafting"}
-            </span>
-          </div>
-        </main>
-
-        {/* ── Sidebar ── */}
-        {sidebarOpen && (
-          <aside className="ed-sidebar">
-            <div className="ed-sidebar-tabs">
-              <button
-                className={`ed-sidebar-tab ${sidebarTab === "research" ? "active" : ""}`}
-                onClick={() => setSidebarTab("research")}
-              >
-                ◈ Research
-              </button>
-              <button
-                className={`ed-sidebar-tab ${sidebarTab === "checklist" ? "active" : ""}`}
-                onClick={() => setSidebarTab("checklist")}
-              >
-                <ProgressRing percent={checkPercent} size={18} stroke={2} />
-                Checklist
-              </button>
-            </div>
-
-            {sidebarTab === "research" && (
-              <div className="ed-panel">
-                <p className="ed-panel-desc">
-                  Plan queries → search the web → rank sources → synthesize a draft brief.
-                </p>
-
-                <div className="ed-field">
-                  <label>Topic</label>
-                  <input
-                    className="ed-input"
-                    placeholder="What to research?"
-                    value={researchTopic}
-                    onChange={(e) => setResearchTopic(e.target.value)}
-                  />
-                </div>
-
-                <div className="ed-field-row">
-                  <div className="ed-field">
-                    <label>Intent</label>
-                    <select value={researchIntent} onChange={(e) => setResearchIntent(e.target.value)}>
-                      {INTENT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="ed-field">
-                    <label>Audience</label>
-                    <select value={researchAudience} onChange={(e) => setResearchAudience(e.target.value)}>
-                      {AUDIENCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="ed-field">
-                  <label>Depth</label>
-                  <select value={researchDepth} onChange={(e) => setResearchDepth(e.target.value)}>
-                    {DEPTH_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-
-                <button
-                  className="ed-btn primary full"
-                  onClick={runResearchAgent}
-                  disabled={researchState === "loading"}
-                >
-                  {researchState === "loading" ? <><span className="spinner" /> Researching…</> : "◈ Run Research Agent"}
-                </button>
-
-                {/* Live progress stages */}
-                {researchState === "loading" && researchStage && (
-                  <div className="ed-research-stages">
-                    {["planning", "searching", "analyzing", "synthesizing"].map((stage) => (
-                      <div
-                        key={stage}
-                        className={`ed-stage ${stage === researchStage ? "active" :
-                          ["planning", "searching", "analyzing", "synthesizing"].indexOf(stage) <
-                            ["planning", "searching", "analyzing", "synthesizing"].indexOf(researchStage) ? "done" : ""
-                          }`}
-                      >
-                        <span className="ed-stage-dot">
-                          {["planning", "searching", "analyzing", "synthesizing"].indexOf(stage) <
-                            ["planning", "searching", "analyzing", "synthesizing"].indexOf(researchStage) ? "✓" :
-                            stage === researchStage ? <span className="spinner-sm" /> : "○"}
-                        </span>
-                        <span className="ed-stage-label">
-                          {stage === "planning" ? "Planning queries" :
-                            stage === "searching" ? "Searching the web" :
-                              stage === "analyzing" ? "Analyzing sources" : "Synthesizing brief"}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {researchState === "error" && <p className="ed-error">{researchError}</p>}
-
-                {/* Compact done state — opens the panel */}
-                {researchResult && (
-                  <div className="ed-research-done">
-                    <div className="ed-research-done-header">
-                      <span className="ed-done-check">✓</span>
-                      <div>
-                        <strong>Research complete</strong>
-                        <span className="ed-done-meta">{researchResult.sources?.length || 0} sources found</span>
-                      </div>
-                    </div>
-                    <p className="ed-done-thesis">{researchResult.synthesis?.oneSentenceAngle}</p>
-                    <button
-                      className="ed-btn primary full"
-                      onClick={() => setResearchPanelOpen(true)}
-                    >
-                      Open Research ◈
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {sidebarTab === "checklist" && (
-              <div className="ed-panel">
-                <div className="ed-check-header">
-                  <ProgressRing percent={checkPercent} size={48} stroke={3} />
-                  <div>
-                    <div className="ed-check-count">{compileChecks.filter((c) => c.done).length}/{compileChecks.length}</div>
-                    <div className="ed-check-label">items complete</div>
-                  </div>
-                </div>
-                <ul className="ed-checklist">
-                  {compileChecks.map((c) => (
-                    <li key={c.label} className={c.done ? "done" : ""}>
-                      <span className="ed-check-icon">{c.done ? "✓" : "○"}</span>
-                      {c.label}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </aside>
-        )}
-
-        {/* ── Research Artifact Panel ── */}
-        {researchPanelOpen && researchResult && (
-          <div className="ed-research-panel">
-            <div className="ed-rp-header">
-              <h3>◈ Research Artifact</h3>
-              <div className="ed-rp-header-meta">
-                {researchResult.model && <span className="ed-rp-model">{researchResult.model}</span>}
-                {researchResult.plan?.totalSearchRounds > 1 && <span className="ed-rp-rounds">{researchResult.plan.totalSearchRounds} rounds</span>}
-              </div>
-              <button className="ed-rp-close" onClick={() => setResearchPanelOpen(false)}>×</button>
-            </div>
-
-            <div className="ed-rp-body">
-              {/* Pipeline info card */}
-              {researchResult.plan && (
-                <div className="ed-rp-card ed-rp-pipeline">
-                  <div className="ed-rp-card-label">Research Pipeline</div>
-                  <div className="ed-rp-pipeline-stats">
-                    <span>{researchResult.sources?.length || 0} sources</span>
-                    <span>{researchResult.plan.queries?.length || 0} queries</span>
-                    <span>{researchResult.plan.totalSearchRounds || 1} search {researchResult.plan.totalSearchRounds > 1 ? "rounds" : "round"}</span>
-                    {researchResult.synthesis?.confidenceScore != null && (
-                      <span className="ed-rp-confidence">
-                        {Math.round(researchResult.synthesis.confidenceScore * 100)}% confidence
-                      </span>
-                    )}
-                  </div>
-                  {researchResult.plan.subTopics?.length > 0 && (
-                    <div className="ed-rp-subtopics">
-                      {researchResult.plan.subTopics.map((st, i) => (
-                        <span key={i} className="ed-rp-tag">{st}</span>
-                      ))}
-                    </div>
-                  )}
-                  {researchResult.plan.gaps?.length > 0 && (
-                    <div className="ed-rp-gaps">
-                      <small>Gaps identified:</small>
-                      {researchResult.plan.gaps.map((g, i) => (
-                        <span key={i} className="ed-rp-gap">{g}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Thesis card */}
-              <div className="ed-rp-card">
-                <div className="ed-rp-card-label">Thesis</div>
-                <p className="ed-rp-thesis">{researchResult.synthesis?.thesis}</p>
-              </div>
-
-              {/* Suggested title */}
-              {researchResult.synthesis?.suggestedTitle && (
-                <div className="ed-rp-card">
-                  <div className="ed-rp-card-label">Suggested Title</div>
-                  <p className="ed-rp-title-suggest">{researchResult.synthesis.suggestedTitle}</p>
-                </div>
-              )}
-
-              {/* Outline */}
-              {researchResult.synthesis?.outline?.length > 0 && (
-                <div className="ed-rp-card">
-                  <div className="ed-rp-card-label">Outline</div>
-                  <ol className="ed-rp-outline">
-                    {researchResult.synthesis.outline.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-
-              {/* Key Takeaways */}
-              {researchResult.synthesis?.keyTakeaways?.length > 0 && (
-                <div className="ed-rp-card">
-                  <div className="ed-rp-card-label">Key Takeaways</div>
-                  <ul className="ed-rp-takeaways">
-                    {researchResult.synthesis.keyTakeaways.map((item, i) => (
-                      <li key={i}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Sources */}
-              {researchResult.sources?.length > 0 && (
-                <div className="ed-rp-card">
-                  <div className="ed-rp-card-label">Sources ({researchResult.sources.length})</div>
-                  <ul className="ed-rp-sources">
-                    {researchResult.sources.slice(0, 10).map((src) => (
-                      <li key={src.id}>
-                        <a href={src.url} target="_blank" rel="noopener noreferrer">
-                          {src.title}
-                        </a>
-                        <span className="ed-rp-domain">{src.domain}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="ed-rp-actions">
-                <button className="ed-btn primary sm" onClick={buildDraftFromResearch}>Build Draft</button>
-                <button className="ed-btn ghost sm" onClick={insertResearchSummary}>Insert Summary</button>
-                <button className="ed-btn ghost sm" onClick={copySourcesToClipboard}>Copy Sources</button>
-              </div>
-
-              {/* Follow-up chat */}
-              <div className="ed-rp-followup">
-                <div className="ed-rp-card-label">Follow-up Questions</div>
-                <div className="ed-rp-messages">
-                  {followUpMessages.map((msg, i) => (
-                    <div key={i} className={`ed-rp-msg ${msg.role}`}>
-                      <div className="ed-rp-msg-text">{msg.text}</div>
-                      {msg.role === "assistant" && (
-                        <button className="ed-rp-insert-btn" onClick={() => insertFollowUpAsBlock(msg.text)} title="Insert as block">
-                          + Insert
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {followUpLoading && (
-                    <div className="ed-rp-msg assistant">
-                      <span className="spinner" /> Thinking…
-                    </div>
-                  )}
-                </div>
-                <div className="ed-rp-followup-input">
-                  <input
-                    type="text"
-                    className="ed-input"
-                    placeholder="Ask a follow-up question…"
-                    value={followUpInput}
-                    onChange={(e) => setFollowUpInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && askFollowUp()}
-                    disabled={followUpLoading}
-                  />
-                  <button className="ed-btn primary sm" onClick={askFollowUp} disabled={followUpLoading || !followUpInput.trim()}>
-                    Ask
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-=======
    TONE & SLASH COMMAND DEFINITIONS
    ═══════════════════════════════════════════════════ */
 const TONE_OPTIONS = ["formal", "conversational", "technical", "persuasive"];
 
 const SLASH_COMMANDS = [
-    { cmd: "/h1", label: "Heading 1", icon: "H1", type: "heading" },
-    { cmd: "/h2", label: "Heading 2", icon: "H2", type: "heading-h3" },
-    { cmd: "/quote", label: "Blockquote", icon: "❝", type: "quote" },
-    { cmd: "/code", label: "Code Block", icon: "</>", type: "code" },
-    { cmd: "/divider", label: "Divider", icon: "—", type: "divider" },
-    { cmd: "/image", label: "Image", icon: "▣", type: "image" },
-    { cmd: "/ai", label: "AI Co-Pilot", icon: "✦", type: "ai" },
+    // Basic blocks
+    { cmd: "/text", label: "Text", icon: "¶", type: "paragraph", desc: "Plain text block", category: "basic" },
+    { cmd: "/h1", label: "Heading 1", icon: "H1", type: "heading", desc: "Large section heading", category: "basic" },
+    { cmd: "/h2", label: "Heading 2", icon: "H2", type: "heading-h3", desc: "Medium section heading", category: "basic" },
+    { cmd: "/h3", label: "Heading 3", icon: "H3", type: "heading-h4", desc: "Small section heading", category: "basic" },
+    { cmd: "/bullet", label: "Bulleted List", icon: "•", type: "bullet-list", desc: "Unordered list item", category: "basic" },
+    { cmd: "/number", label: "Numbered List", icon: "1.", type: "number-list", desc: "Ordered list item", category: "basic" },
+    { cmd: "/todo", label: "To-do", icon: "☐", type: "todo", desc: "Checkbox task item", category: "basic" },
+    { cmd: "/toggle", label: "Toggle", icon: "▸", type: "toggle", desc: "Collapsible content section", category: "basic" },
+    { cmd: "/quote", label: "Blockquote", icon: "❝", type: "quote", desc: "Highlighted quote block", category: "basic" },
+    { cmd: "/callout", label: "Callout", icon: "💡", type: "callout", desc: "Highlighted info box", category: "basic" },
+    { cmd: "/code", label: "Code Block", icon: "</>", type: "code", desc: "Syntax-highlighted code", category: "basic" },
+    { cmd: "/divider", label: "Divider", icon: "—", type: "divider", desc: "Horizontal separator line", category: "basic" },
+    // Media
+    { cmd: "/image", label: "Image", icon: "▣", type: "image", desc: "Embed an image from URL", category: "media" },
+    // AI
+    { cmd: "/ai", label: "AI Co-Pilot", icon: "✦", type: "ai", desc: "Open AI assistant panel", category: "ai" },
+    { cmd: "/ai continue", label: "Continue writing", icon: "✦", action: "continue", desc: "AI continues your text", category: "ai" },
+    { cmd: "/ai rewrite", label: "Rewrite selection", icon: "✦", action: "rewrite", desc: "Rephrase current block", category: "ai" },
+    { cmd: "/ai shorter", label: "Make shorter", icon: "✦", action: "shorter", desc: "Condense the text", category: "ai" },
+    { cmd: "/ai longer", label: "Expand", icon: "✦", action: "longer", desc: "Elaborate with more detail", category: "ai" },
+    { cmd: "/ai outline", label: "Generate outline", icon: "✦", action: "outline", desc: "Create a post outline", category: "ai" },
+    { cmd: "/ai titles", label: "Suggest titles", icon: "✦", action: "titles", desc: "Generate title ideas", category: "ai" },
+    { cmd: "/ai research", label: "Deep research", icon: "✦", action: "research", desc: "Research a topic in depth", category: "ai" },
 ];
 
-const AI_SLASH_COMMANDS = [
-    { cmd: "/ai continue", label: "Continue writing", action: "continue" },
-    { cmd: "/ai rewrite", label: "Rewrite selection", action: "rewrite" },
-    { cmd: "/ai shorter", label: "Make shorter", action: "shorter" },
-    { cmd: "/ai longer", label: "Expand", action: "longer" },
-    { cmd: "/ai outline", label: "Generate outline", action: "outline" },
-    { cmd: "/ai research", label: "Research topic", action: "research" },
+const SLASH_CATEGORIES = [
+    { key: "basic", label: "Basic Blocks" },
+    { key: "media", label: "Media" },
+    { key: "ai", label: "AI Commands" },
 ];
+
+const DEFAULT_METADATA = {
+    "todo": { checked: false },
+    "toggle": { expanded: false, body: "" },
+    "callout": { emoji: "💡" },
+};
 
 /* ═══════════════════════════════════════════════════
    STREAMING HELPER — calls /api/ai or /api/ai/research
@@ -1377,21 +125,33 @@ export default function EditorPage({ params }) {
     const resolvedParams = use(params);
     const isNew = resolvedParams.id === "new";
 
-    const [title, setTitle] = useState(isNew ? "" : "The Future of European Fintech Infrastructure");
-    const [subtitle, setSubtitle] = useState(isNew ? "" : "Why Europe's regulatory moat is becoming its biggest competitive advantage.");
-    const [blocks, setBlocks] = useState(isNew ? [
-        { id: "b1", type: "paragraph", content: "" },
-    ] : [
-        { id: "b1", type: "paragraph", content: "While Silicon Valley moves fast and breaks things, Europe has been quietly building something more durable: a regulatory framework that actually works for fintech innovation." },
-        { id: "b2", type: "heading", content: "The Infrastructure Layer" },
-        { id: "b3", type: "paragraph", content: "The real opportunity isn't in consumer-facing fintech apps. It's in the plumbing. The APIs, the settlement layers, the compliance engines." },
-        { id: "b4", type: "quote", content: "The best time to build financial infrastructure in Europe was five years ago. The second best time is now." },
-        { id: "b5", type: "paragraph", content: "Every B2B payment that crosses a border reveals the cracks in legacy banking infrastructure. SWIFT was built for a world of batch processing and paper trails — not real-time settlement and programmable money." },
-        { id: "b6", type: "code", content: "const transfer = await stablecoinRail.send({\n  from: vIBAN_sender,\n  to: vIBAN_receiver,\n  amount: 50000,\n  asset: \"EURC\",\n});" },
-        { id: "b7", type: "paragraph", content: "" },
-    ]);
+    // Convex mutations
+    const createPost = useMutation(api.posts.create);
+    const updatePost = useMutation(api.posts.update);
+
+    // Load existing post data
+    const existingPost = useQuery(api.posts.getById, isNew ? "skip" : { id: resolvedParams.id });
+
+    const [title, setTitle] = useState("");
+    const [subtitle, setSubtitle] = useState("");
+    const [blocks, setBlocks] = useState([{ id: "b1", type: "paragraph", content: "" }]);
+    const [postLoaded, setPostLoaded] = useState(isNew);
+
+    // Load existing post data into state when it arrives
+    useEffect(() => {
+        if (!isNew && existingPost && !postLoaded) {
+            setTitle(existingPost.title || "");
+            setSubtitle(existingPost.subtitle || "");
+            if (existingPost.blocks && existingPost.blocks.length > 0) {
+                setBlocks(existingPost.blocks);
+            }
+            setPostLoaded(true);
+            setSaveStatus("saved");
+        }
+    }, [existingPost, isNew, postLoaded]);
 
     const [focusMode, setFocusMode] = useState(false);
+    const [showBorders, setShowBorders] = useState(false);
     const [activeBlockId, setActiveBlockId] = useState(null);
     const [slashMenu, setSlashMenu] = useState(null);
     const [slashFilter, setSlashFilter] = useState("");
@@ -1420,6 +180,14 @@ export default function EditorPage({ params }) {
     const [researchStatus, setResearchStatus] = useState("");
     const [researchSources, setResearchSources] = useState(0);
 
+    // Ghost Text Phase 2
+    const [ghostText, setGhostText] = useState("");
+    const [isGhosting, setIsGhosting] = useState(false);
+    const ghostDebounceRef = useRef(null);
+
+    // Architect Phase 3
+    const [showOutline, setShowOutline] = useState(false);
+
     const blockRefs = useRef({});
     const aiInlineRef = useRef(aiInline);
     const slashMenuRef = useRef(slashMenu);
@@ -1427,6 +195,51 @@ export default function EditorPage({ params }) {
     // Keep refs in sync for keyboard shortcuts
     useEffect(() => { aiInlineRef.current = aiInline; }, [aiInline]);
     useEffect(() => { slashMenuRef.current = slashMenu; }, [slashMenu]);
+
+    // Focus Mode (Hemingway) Side Effects & Architect Body Class
+    useEffect(() => {
+        if (focusMode) {
+            document.body.classList.add("focus-mode-active");
+        } else {
+            document.body.classList.remove("focus-mode-active");
+        }
+
+        if (showOutline) {
+            document.body.classList.add("architect-open");
+        } else {
+            document.body.classList.remove("architect-open");
+        }
+
+        return () => {
+            document.body.classList.remove("focus-mode-active");
+            document.body.classList.remove("architect-open");
+        }
+    }, [focusMode, showOutline]);
+
+    // Typewriter Scrolling
+    useEffect(() => {
+        if (activeBlockId && blockRefs.current[activeBlockId]) {
+            // Slight delay to allow layout recalculation (e.g. adding a new block)
+            setTimeout(() => {
+                if (blockRefs.current[activeBlockId]) {
+                    blockRefs.current[activeBlockId].scrollIntoView({
+                        behavior: "smooth",
+                        block: "center",
+                    });
+                }
+            }, 50);
+        }
+    }, [activeBlockId]);
+
+    // Auto-grow all textareas on mount / block changes
+    useEffect(() => {
+        Object.values(blockRefs.current).forEach(el => {
+            if (el && el.tagName === "TEXTAREA") {
+                el.style.height = "auto";
+                el.style.height = el.scrollHeight + "px";
+            }
+        });
+    }, [blocks]);
 
     // Auto-detect tone from content
     useEffect(() => {
@@ -1454,7 +267,7 @@ export default function EditorPage({ params }) {
         const handler = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setCmdOpen(o => !o); }
             if ((e.metaKey || e.ctrlKey) && e.key === "t") { e.preventDefault(); generateTitles(); }
-            if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); handleSave(); }
+            if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); handleSave("draft"); }
             if (e.key === "Escape") {
                 if (aiInlineRef.current) { setAiInline(null); setAiResult(null); setAiStreaming(""); setAiLoading(false); }
                 // slashMenu ESC is handled at the block level in handleBlockKeyDown
@@ -1510,9 +323,101 @@ export default function EditorPage({ params }) {
         return block?.content || "";
     }, [title, subtitle, blocks]);
 
-    const handleSave = () => {
+    const wrapLists = (lines) => {
+        const result = [];
+        let i = 0;
+        while (i < lines.length) {
+            if (lines[i].startsWith('<li class="bullet">')) {
+                const group = [];
+                while (i < lines.length && lines[i].startsWith('<li class="bullet">')) {
+                    group.push(lines[i]);
+                    i++;
+                }
+                result.push(`<ul>${group.join("\n")}</ul>`);
+            } else if (lines[i].startsWith('<li class="numbered">')) {
+                const group = [];
+                while (i < lines.length && lines[i].startsWith('<li class="numbered">')) {
+                    group.push(lines[i]);
+                    i++;
+                }
+                result.push(`<ol>${group.join("\n")}</ol>`);
+            } else {
+                result.push(lines[i]);
+                i++;
+            }
+        }
+        return result;
+    };
+
+    const handleSave = async (status = "draft") => {
+        if (!title.trim()) {
+            alert("Please add a title before saving.");
+            return;
+        }
         setSaveStatus("saving");
-        setTimeout(() => setSaveStatus("saved"), 600);
+        try {
+            const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+            const wordCount = getWordCount();
+            const readTime = getReadTime();
+            const excerpt = subtitle || blocks.find(b => b.content?.trim())?.content?.substring(0, 200) || "";
+            const rawLines = blocks
+                .map(b => {
+                    if (b.type === "heading") return `<h2>${b.content}</h2>`;
+                    if (b.type === "heading-h3") return `<h3>${b.content}</h3>`;
+                    if (b.type === "heading-h4") return `<h4>${b.content}</h4>`;
+                    if (b.type === "quote") return `<blockquote>${b.content}</blockquote>`;
+                    if (b.type === "code") return `<pre><code>${b.content}</code></pre>`;
+                    if (b.type === "divider") return `<hr />`;
+                    if (b.type === "bullet-list") return `<li class="bullet">${b.content}</li>`;
+                    if (b.type === "number-list") return `<li class="numbered">${b.content}</li>`;
+                    if (b.type === "todo") return `<div class="todo-item${b.metadata?.checked ? " checked" : ""}"><span class="todo-checkbox">${b.metadata?.checked ? "☑" : "☐"}</span>${b.content}</div>`;
+                    if (b.type === "toggle") return `<details${b.metadata?.expanded ? " open" : ""}><summary>${b.content}</summary>${b.metadata?.body || ""}</details>`;
+                    if (b.type === "callout") return `<div class="callout"><span class="callout-emoji">${b.metadata?.emoji || "💡"}</span><span>${b.content}</span></div>`;
+                    if (b.type === "image") return b.content ? `<figure><img src="${b.content}" alt="" />${b.metadata?.caption ? `<figcaption>${b.metadata.caption}</figcaption>` : ""}</figure>` : "";
+                    return `<p>${b.content}</p>`;
+                })
+                .filter(Boolean);
+            // Wrap consecutive <li> items in <ul> or <ol>
+            const content = wrapLists(rawLines).join("\n");
+            const today = new Date();
+            const date = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, "0")}.${String(today.getDate()).padStart(2, "0")}`;
+
+            if (isNew) {
+                await createPost({
+                    slug,
+                    title: title.trim(),
+                    subtitle: subtitle.trim() || undefined,
+                    excerpt,
+                    content,
+                    date,
+                    readTime,
+                    wordCount,
+                    tags: [],
+                    status,
+                    views: 0,
+                    blocks,
+                });
+            } else {
+                await updatePost({
+                    id: resolvedParams.id,
+                    slug,
+                    title: title.trim(),
+                    subtitle: subtitle.trim() || undefined,
+                    excerpt,
+                    content,
+                    date: existingPost?.date || date,
+                    readTime,
+                    wordCount,
+                    status,
+                    blocks,
+                });
+            }
+            setSaveStatus("saved");
+        } catch (err) {
+            console.error("Publish failed:", err);
+            setSaveStatus("unsaved");
+            alert("Publish failed: " + err.message);
+        }
     };
 
     // Block operations
@@ -1521,12 +426,15 @@ export default function EditorPage({ params }) {
         setSaveStatus("unsaved");
     };
 
-    const addBlockAfter = (afterId, type = "paragraph", content = "") => {
+    const addBlockAfter = (afterId, type = "paragraph", content = "", metadata = undefined) => {
         const newId = `b${Date.now()}`;
+        const meta = metadata || DEFAULT_METADATA[type] || undefined;
         setBlocks(prev => {
             const idx = prev.findIndex(b => b.id === afterId);
             const newBlocks = [...prev];
-            newBlocks.splice(idx + 1, 0, { id: newId, type, content });
+            const newBlock = { id: newId, type, content };
+            if (meta) newBlock.metadata = { ...meta };
+            newBlocks.splice(idx + 1, 0, newBlock);
             return newBlocks;
         });
         setTimeout(() => {
@@ -1536,13 +444,65 @@ export default function EditorPage({ params }) {
     };
 
     const deleteBlock = (id) => {
-        if (blocks.length <= 1) return;
+        if (blocks.length <= 1) {
+            // If it's the last block, reset it to an empty paragraph instead of refusing
+            setBlocks([{ id: `b${Date.now()}`, type: "paragraph", content: "" }]);
+            return;
+        }
         const idx = blocks.findIndex(b => b.id === id);
         setBlocks(prev => prev.filter(b => b.id !== id));
         const prevBlock = blocks[idx - 1];
         if (prevBlock && blockRefs.current[prevBlock.id]) {
             blockRefs.current[prevBlock.id].focus();
         }
+    };
+
+    // Block metadata helpers
+    const updateBlockMetadata = (blockId, updates) => {
+        setBlocks(prev => prev.map(b =>
+            b.id === blockId ? { ...b, metadata: { ...(b.metadata || {}), ...updates } } : b
+        ));
+        setSaveStatus("unsaved");
+    };
+
+    const toggleTodoCheck = (blockId) => {
+        setBlocks(prev => prev.map(b =>
+            b.id === blockId ? { ...b, metadata: { ...(b.metadata || {}), checked: !(b.metadata?.checked) } } : b
+        ));
+        setSaveStatus("unsaved");
+    };
+
+    const toggleToggleExpand = (blockId) => {
+        setBlocks(prev => prev.map(b =>
+            b.id === blockId ? { ...b, metadata: { ...(b.metadata || {}), expanded: !(b.metadata?.expanded) } } : b
+        ));
+    };
+
+    const getListNumber = (blockId) => {
+        let count = 1;
+        for (const b of blocks) {
+            if (b.id === blockId) break;
+            if (b.type === "number-list") count++;
+            else count = 1;
+        }
+        return count;
+    };
+
+    const getGroupedSlashCommands = () => {
+        const filtered = getFilteredSlashCommands();
+        const groups = [];
+        for (const cat of SLASH_CATEGORIES) {
+            const items = filtered.filter(c => c.category === cat.key);
+            if (items.length > 0) groups.push({ ...cat, items });
+        }
+        return groups;
+    };
+
+    const convertBlockType = (blockId, newType) => {
+        const meta = DEFAULT_METADATA[newType] || undefined;
+        setBlocks(prev => prev.map(b =>
+            b.id === blockId ? { ...b, type: newType, content: "", metadata: meta ? { ...meta } : undefined } : b
+        ));
     };
 
     // Handle block key events
@@ -1568,85 +528,212 @@ export default function EditorPage({ params }) {
         }
 
         // Normal block key handling (runs whether or not slash menu was open)
+        if (e.key === "Tab" && ghostText && block.id === activeBlockId) {
+            e.preventDefault();
+            // Accept ghost text
+            updateBlock(block.id, block.content + ghostText);
+            setGhostText("");
+            setIsGhosting(false);
+            return;
+        }
+
+        const listTypes = ["bullet-list", "number-list", "todo"];
         if (e.key === "Enter" && !e.shiftKey && block.type !== "code" && !slashMenu) {
             e.preventDefault();
-            addBlockAfter(block.id);
+            if (listTypes.includes(block.type) && block.content.trim()) {
+                // Continue list: create another block of the same type
+                addBlockAfter(block.id, block.type, "");
+            } else if (listTypes.includes(block.type) && !block.content.trim()) {
+                // Empty list item Enter → revert to paragraph
+                convertBlockType(block.id, "paragraph");
+            } else {
+                addBlockAfter(block.id);
+            }
         }
-        if (e.key === "Backspace" && block.content === "" && blocks.length > 1) {
-            e.preventDefault();
-            deleteBlock(block.id);
+        if (e.key === "Backspace" && blocks.length > 1) {
+            if (!block.content || block.content === "") {
+                e.preventDefault();
+                if (listTypes.includes(block.type) || block.type === "callout" || block.type === "heading-h4") {
+                    // Revert special blocks to paragraph on backspace when empty
+                    convertBlockType(block.id, "paragraph");
+                } else {
+                    deleteBlock(block.id);
+                }
+            }
         }
+
+        // Only clear ghost text on actual content typing, handled in onInput or generalized:
+        if (e.key !== "Tab" && e.key !== "Shift" && e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && ghostText) {
+            setGhostText("");
+            setIsGhosting(false);
+        }
+    };
+
+    const fetchGhostText = async (block, currentText) => {
+        if (!currentText.trim() || currentText.length < 10) return;
+        setIsGhosting(true);
+        try {
+            const res = await fetch("/api/ai", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "continue",
+                    input: currentText,
+                    context: getStructuredContext(),
+                    fieldType: block.type,
+                    fieldContent: currentText,
+                    model: aiModel,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.text && activeBlockId === block.id) {
+                    setGhostText(data.text);
+                }
+            }
+        } catch (e) {
+            // silent fail for ghost text
+        } finally {
+            setIsGhosting(false);
+        }
+    };
+
+    const autoGrow = (el) => {
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = el.scrollHeight + "px";
     };
 
     const handleBlockInput = (e, block) => {
         const value = e.target.value ?? e.target.textContent ?? "";
         updateBlock(block.id, value);
+        autoGrow(e.target);
+
+        // Clear ghost text immediately on input
+        if (ghostText) {
+            setGhostText("");
+        }
+
+        // Debounce ghost text fetch
+        if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
+        if (!slashMenu && value.trim().length > 10) {
+            ghostDebounceRef.current = setTimeout(() => {
+                if (activeBlockId === block.id) {
+                    fetchGhostText(block, value);
+                }
+            }, 800);
+        }
 
         // Markdown shortcuts
         if (value === "## ") {
-            updateBlock(block.id, "");
-            setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "heading", content: "" } : b));
+            convertBlockType(block.id, "heading");
         }
         if (value === "### ") {
-            updateBlock(block.id, "");
-            setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "heading-h3", content: "" } : b));
+            convertBlockType(block.id, "heading-h3");
+        }
+        if (value === "#### ") {
+            convertBlockType(block.id, "heading-h4");
         }
         if (value === "> ") {
-            updateBlock(block.id, "");
-            setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "quote", content: "" } : b));
+            convertBlockType(block.id, "quote");
         }
         if (value === "```") {
-            updateBlock(block.id, "");
-            setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "code", content: "" } : b));
+            convertBlockType(block.id, "code");
+        }
+        if (value === "- " || value === "* ") {
+            convertBlockType(block.id, "bullet-list");
+        }
+        if (value === "1. ") {
+            convertBlockType(block.id, "number-list");
+        }
+        if (value === "[] " || value === "[ ] ") {
+            convertBlockType(block.id, "todo");
         }
         if (value === "---") {
             setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "divider", content: "" } : b));
             addBlockAfter(block.id);
         }
 
-        // Slash menu: open when value is exactly "/"
-        if (value === "/" && !slashMenu) {
+        // Slash menu: open when "/" is typed (at start or after existing text)
+        if (!slashMenu && value.endsWith("/")) {
             setSlashMenu(block.id);
             setSlashFilter("");
             setSlashIndex(0);
-        } else if (slashMenu && value.startsWith("/")) {
-            setSlashFilter(value);
-            setSlashIndex(0);
-        } else if (slashMenu && !value.startsWith("/")) {
-            // Closed naturally by deleting the "/"
-            setSlashMenu(null);
-            setSlashFilter("");
+        } else if (slashMenu) {
+            // Extract text after the last "/" to use as filter
+            const lastSlashIdx = value.lastIndexOf("/");
+            if (lastSlashIdx !== -1) {
+                setSlashFilter(value.substring(lastSlashIdx));
+                setSlashIndex(0);
+            } else {
+                // "/" was deleted, close menu
+                setSlashMenu(null);
+                setSlashFilter("");
+            }
         }
     };
 
     const getFilteredSlashCommands = () => {
-        const all = [...SLASH_COMMANDS, ...AI_SLASH_COMMANDS.map(a => ({ ...a, icon: "✦", type: "ai" }))];
-        if (!slashFilter) return all;
-        return all.filter(c => (c.cmd || c.label).toLowerCase().includes(slashFilter.toLowerCase()));
+        if (!slashFilter) return SLASH_COMMANDS;
+        const q = slashFilter.toLowerCase();
+        return SLASH_COMMANDS.filter(c =>
+            (c.cmd || "").toLowerCase().includes(q) ||
+            c.label.toLowerCase().includes(q) ||
+            (c.desc || "").toLowerCase().includes(q)
+        );
     };
 
     const executeSlashCommand = (cmd, blockId) => {
         setSlashMenu(null);
+        setSlashFilter("");
+
+        // Remove the slash trigger text (everything from last "/" onward)
+        const block = blocks.find(b => b.id === blockId);
+        const textBefore = block ? block.content.substring(0, block.content.lastIndexOf("/")) : "";
 
         if (cmd.action) {
             if (cmd.action === "research") {
-                updateBlock(blockId, "");
+                updateBlock(blockId, textBefore);
                 setResearchOpen(true);
                 return;
             }
             setAiInline({ blockId, action: cmd.action });
-            updateBlock(blockId, "");
+            updateBlock(blockId, textBefore);
             return;
         }
 
+        const meta = DEFAULT_METADATA[cmd.type] || undefined;
+
         if (cmd.type === "divider") {
-            setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: "divider", content: "" } : b));
-            addBlockAfter(blockId);
+            updateBlock(blockId, textBefore);
+            if (textBefore) {
+                const newId = addBlockAfter(blockId, "divider", "");
+                addBlockAfter(newId);
+            } else {
+                setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: "divider", content: "" } : b));
+                addBlockAfter(blockId);
+            }
         } else if (cmd.type === "ai") {
             setAiInline({ blockId, action: null });
-            updateBlock(blockId, "");
+            updateBlock(blockId, textBefore);
+        } else if (cmd.type === "image") {
+            updateBlock(blockId, textBefore);
+            if (textBefore) {
+                addBlockAfter(blockId, "image", "");
+            } else {
+                setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: "image", content: "" } : b));
+            }
         } else {
-            setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: cmd.type, content: "" } : b));
+            if (textBefore) {
+                updateBlock(blockId, textBefore);
+                addBlockAfter(blockId, cmd.type, "", meta);
+            } else {
+                setBlocks(prev => prev.map(b =>
+                    b.id === blockId
+                        ? { ...b, type: cmd.type, content: "", ...(meta ? { metadata: { ...meta } } : {}) }
+                        : b
+                ));
+            }
         }
     };
 
@@ -1799,8 +886,8 @@ export default function EditorPage({ params }) {
     };
     const handleDragEnd = () => setDragId(null);
 
-    /* ═══ REUSABLE AI INLINE PANEL ═══ */
-    const AiInlinePanel = ({ fieldLabel }) => {
+    /* ═══ AI INLINE PANEL WRAPPER ═══ */
+    const renderAiInlinePanel = (fieldLabel) => {
         const fieldType = getFieldType(aiInline?.blockId);
         const fieldContent = getFieldContent(aiInline?.blockId);
         return (
@@ -1838,7 +925,7 @@ export default function EditorPage({ params }) {
                 )}
 
                 <div className="ai-inline-actions">
-                    {AI_SLASH_COMMANDS.map(cmd => (
+                    {SLASH_COMMANDS.filter(c => c.action && c.action !== "research").map(cmd => (
                         <button key={cmd.action} className="btn btn-ghost btn-sm" onClick={() => executeAI(cmd.action, fieldContent)} disabled={aiLoading}>{cmd.label}</button>
                     ))}
                 </div>
@@ -1862,7 +949,7 @@ export default function EditorPage({ params }) {
                     <div style={{ marginTop: "10px" }}>
                         <div style={{ color: "var(--accent)", fontSize: "0.68rem", marginBottom: "6px" }}>✦ {aiStreaming ? "Streaming…" : "Thinking…"}</div>
                         {aiStreaming ? (
-                            <div className="ai-result" style={{ opacity: 0.85 }}>{aiStreaming}<span className="ai-cursor">▊</span></div>
+                            <div className="ai-result" style={{ opacity: 0.85, userSelect: "text", cursor: "text" }}>{aiStreaming}<span className="ai-cursor">▊</span></div>
                         ) : (<><div className="skeleton-line w80" style={{ marginTop: "4px" }} /><div className="skeleton-line w60" /></>)}
                     </div>
                 )}
@@ -1870,9 +957,10 @@ export default function EditorPage({ params }) {
                 {/* Result */}
                 {aiResult && !aiLoading && (
                     <div className="ai-result">
-                        {aiResult}
+                        <div style={{ userSelect: "text", cursor: "text", whiteSpace: "pre-wrap" }}>{aiResult}</div>
                         <div className="ai-result-actions">
                             <button className="btn btn-primary btn-sm" onClick={insertAiResult}>↵ Insert</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(aiResult); }}>Copy</button>
                             <button className="btn btn-ghost btn-sm" onClick={() => executeAI(aiInline?.action || "rewrite", aiResult)}>↻ Retry</button>
                             <button className="btn btn-ghost btn-sm" onClick={() => { setAiResult(null); setAiInline(null); }}>Dismiss</button>
                         </div>
@@ -2196,6 +1284,266 @@ export default function EditorPage({ params }) {
         );
     };
 
+    /* ═══ ARCHITECT PANEL ═══ */
+    const ArchitectPanel = () => {
+        const headings = blocks.filter(b => b.type === "heading" || b.type === "heading-h3");
+
+        return (
+            <div className={`architect-panel ${showOutline ? "open" : ""}`}>
+                <div className="architect-title">
+                    <span style={{ fontSize: "1.1em" }}>◱</span> Structure
+                    <button
+                        onClick={() => setShowOutline(false)}
+                        style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.8rem" }}
+                    >✕</button>
+                </div>
+
+                {headings.length === 0 ? (
+                    <div style={{ color: "var(--muted)", fontSize: "0.76rem", fontStyle: "italic", textAlign: "center", marginTop: "40px" }}>
+                        No headings yet.<br />Type /h1 or /h2 to outline your thoughts.
+                    </div>
+                ) : (
+                    <div className="architect-list">
+                        {headings.map(h => (
+                            <div
+                                key={h.id}
+                                className={`architect-item ${h.type === "heading" ? "architect-item-h2" : "architect-item-h3"} ${activeBlockId === h.id ? "active" : ""}`}
+                                onClick={() => {
+                                    if (blockRefs.current[h.id]) {
+                                        blockRefs.current[h.id].scrollIntoView({ behavior: "smooth", block: "center" });
+                                        blockRefs.current[h.id].focus();
+                                    }
+                                }}
+                            >
+                                {h.content || <span style={{ opacity: 0.4, fontStyle: "italic" }}>Empty heading</span>}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    /* ═══ BLOCK CONTENT RENDERER ═══ */
+    const renderBlockContent = (block) => {
+        // Shared textarea props helper
+        const txProps = (placeholder, className = "block-content") => ({
+            ref: el => blockRefs.current[block.id] = el,
+            className,
+            value: block.content,
+            onChange: e => handleBlockInput(e, block),
+            onKeyDown: e => handleBlockKeyDown(e, block),
+            onFocus: () => setActiveBlockId(block.id),
+            placeholder,
+            rows: 1,
+            style: { resize: "none" },
+        });
+
+        switch (block.type) {
+            case "divider":
+                return <div className="block-divider" />;
+
+            case "code":
+                return (
+                    <div className="code-block" style={{ margin: "8px 0" }}>
+                        <div className="code-block-header" style={{ display: "flex", alignItems: "center" }}>
+                            <div className="code-block-dots"><span /><span /><span /></div>
+                            <span className="code-block-lang">code</span>
+                            <button
+                                onClick={() => deleteBlock(block.id)}
+                                style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.72rem", padding: "2px 6px", borderRadius: "4px", transition: "color 0.15s" }}
+                                onMouseEnter={e => e.target.style.color = "#ff6b6b"}
+                                onMouseLeave={e => e.target.style.color = "var(--muted)"}
+                                title="Delete code block"
+                            >✕</button>
+                        </div>
+                        <textarea
+                            ref={el => blockRefs.current[block.id] = el}
+                            value={block.content}
+                            onChange={e => { updateBlock(block.id, e.target.value); autoGrow(e.target); }}
+                            onKeyDown={e => handleBlockKeyDown(e, block)}
+                            onFocus={() => setActiveBlockId(block.id)}
+                            style={{ width: "100%", minHeight: "80px", padding: "16px", border: "none", background: "transparent", color: "#c5d0de", fontFamily: "var(--font-mono)", fontSize: "0.82rem", lineHeight: "1.65", outline: "none", resize: "none", overflow: "hidden", caretColor: "var(--accent)" }}
+                            placeholder="Write code…"
+                        />
+                    </div>
+                );
+
+            case "quote":
+                return (
+                    <div className="block-quote">
+                        <textarea {...txProps("Write a quote…")} style={{ fontStyle: "italic", resize: "none" }} />
+                    </div>
+                );
+
+            case "bullet-list":
+                return (
+                    <div className="block-bullet-list">
+                        <span className="block-bullet">•</span>
+                        <textarea {...txProps("List item…")} />
+                    </div>
+                );
+
+            case "number-list":
+                return (
+                    <div className="block-number-list">
+                        <span className="block-number">{getListNumber(block.id)}.</span>
+                        <textarea {...txProps("List item…")} />
+                    </div>
+                );
+
+            case "todo":
+                return (
+                    <div className="block-todo">
+                        <button
+                            className={`block-todo-checkbox ${block.metadata?.checked ? "checked" : ""}`}
+                            onClick={() => toggleTodoCheck(block.id)}
+                            type="button"
+                        >
+                            {block.metadata?.checked ? "☑" : "☐"}
+                        </button>
+                        <textarea
+                            {...txProps("To-do…")}
+                            style={{ resize: "none", textDecoration: block.metadata?.checked ? "line-through" : "none", opacity: block.metadata?.checked ? 0.5 : 1 }}
+                        />
+                    </div>
+                );
+
+            case "toggle":
+                return (
+                    <div className="block-toggle">
+                        <div className="block-toggle-header">
+                            <button
+                                className={`block-toggle-arrow ${block.metadata?.expanded ? "expanded" : ""}`}
+                                onClick={() => toggleToggleExpand(block.id)}
+                                type="button"
+                            >
+                                ▸
+                            </button>
+                            <textarea {...txProps("Toggle heading…")} />
+                        </div>
+                        {block.metadata?.expanded && (
+                            <textarea
+                                className="block-content block-toggle-body"
+                                value={block.metadata?.body || ""}
+                                onChange={e => { updateBlockMetadata(block.id, { body: e.target.value }); autoGrow(e.target); }}
+                                onFocus={() => setActiveBlockId(block.id)}
+                                placeholder="Toggle content…"
+                                rows={1}
+                                style={{ resize: "none" }}
+                            />
+                        )}
+                    </div>
+                );
+
+            case "callout":
+                return (
+                    <div className="block-callout">
+                        <span className="block-callout-emoji">{block.metadata?.emoji || "💡"}</span>
+                        <textarea {...txProps("Type something…")} />
+                    </div>
+                );
+
+            case "image":
+                return (
+                    <div className="block-image-upload">
+                        <input
+                            ref={el => blockRefs.current[block.id] = el}
+                            type="text"
+                            className="block-content"
+                            value={block.content}
+                            onChange={e => { updateBlock(block.id, e.target.value); setSaveStatus("unsaved"); }}
+                            onKeyDown={e => handleBlockKeyDown(e, block)}
+                            onFocus={() => setActiveBlockId(block.id)}
+                            placeholder="Paste image URL…"
+                            style={{ resize: "none" }}
+                        />
+                        {block.content && (
+                            <img className="block-image-preview" src={block.content} alt="" />
+                        )}
+                    </div>
+                );
+
+            case "heading-h4":
+                return (
+                    <div className="ghost-text-wrapper">
+                        <textarea
+                            {...txProps("Small heading…", "block-content heading-h4")}
+                            style={{ resize: "none", position: "relative", zIndex: 10, background: "transparent" }}
+                        />
+                    </div>
+                );
+
+            default: {
+                // paragraph, heading, heading-h3
+                const cls = `block-content ${block.type === "heading" ? "heading" : ""} ${block.type === "heading-h3" ? "heading-h3" : ""}`;
+                const ph = block.type === "heading" ? "Heading…" : block.type === "heading-h3" ? "Subheading…" : "Write something, or type / for commands…";
+                return (
+                    <div className="ghost-text-wrapper">
+                        <textarea
+                            {...txProps(ph, cls)}
+                            style={{ resize: "none", position: "relative", zIndex: 10, background: "transparent" }}
+                        />
+                        {ghostText && activeBlockId === block.id && (
+                            <div className={`ghost-text ${cls}`}>
+                                <span style={{ visibility: "hidden" }}>{block.content}</span>
+                                <span>{ghostText}</span>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+        }
+    };
+
+    /* ═══ SLASH MENU RENDERER ═══ */
+    const renderSlashMenu = (block) => {
+        const groups = getGroupedSlashCommands();
+        const filtered = getFilteredSlashCommands();
+        // Compute a flat index for keyboard navigation
+        let flatIdx = 0;
+
+        return (
+            <div className="ed-slash-menu">
+                <div className="ed-slash-header">
+                    <span>{slashFilter ? `Filter: ${slashFilter}` : "Commands"}</span>
+                    <kbd>↑↓ navigate</kbd>
+                </div>
+                <div className="ed-slash-body">
+                    {filtered.length === 0 ? (
+                        <div className="ed-slash-empty">No commands found</div>
+                    ) : (
+                        groups.map(group => {
+                            const items = group.items;
+                            return (
+                                <div key={group.key}>
+                                    <div className="ed-slash-category-label">{group.label}</div>
+                                    {items.map(cmd => {
+                                        const idx = flatIdx++;
+                                        return (
+                                            <button
+                                                key={cmd.cmd || cmd.label}
+                                                className={`ed-slash-item ${idx === slashIndex ? "active" : ""}`}
+                                                onClick={() => executeSlashCommand(cmd, block.id)}
+                                                onMouseEnter={() => setSlashIndex(idx)}
+                                            >
+                                                <span className="ed-slash-icon">{cmd.icon}</span>
+                                                <div>
+                                                    <span className="ed-slash-label">{cmd.label}</span>
+                                                    <span className="ed-slash-desc">{cmd.desc}</span>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     /* ═══ RENDER ═══ */
     return (
         <div className="editor-layout">
@@ -2209,8 +1557,14 @@ export default function EditorPage({ params }) {
                     </span>
                 </div>
                 <div className="editor-topbar-right">
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowBorders(b => !b)}>
+                        {showBorders ? "▣ Borders ON" : "▢ Borders"}
+                    </button>
                     <button className="btn btn-ghost btn-sm" onClick={() => setFocusMode(f => !f)}>
                         {focusMode ? "◉ Focus ON" : "○ Focus"}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowOutline(o => !o)}>
+                        ◱ Architect
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={() => setResearchOpen(true)}>
                         🔍 Research
@@ -2221,7 +1575,10 @@ export default function EditorPage({ params }) {
                     <button className="btn btn-ghost btn-sm" onClick={() => setCmdOpen(true)}>
                         ⌘K
                     </button>
-                    <button className="btn btn-primary btn-sm" onClick={handleSave}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleSave("draft")}>
+                        Save
+                    </button>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleSave("published")}>
                         Publish
                     </button>
                 </div>
@@ -2229,41 +1586,47 @@ export default function EditorPage({ params }) {
 
             {/* Editor canvas */}
             <div className="editor-canvas">
-                <input
+                <textarea
                     className="editor-title-input"
                     placeholder="Post title… (type / for AI)"
                     value={title}
-                    onChange={e => { setTitle(e.target.value); setSaveStatus("unsaved"); }}
+                    rows={1}
+                    onChange={e => { setTitle(e.target.value); setSaveStatus("unsaved"); autoGrow(e.target); }}
                     onKeyDown={e => {
                         if (e.key === "/") {
                             e.preventDefault();
                             setAiInline({ blockId: "__title__", action: null, fieldType: "title" });
                         }
+                        if (e.key === "Enter") e.preventDefault();
                     }}
+                    ref={el => { if (el) autoGrow(el); }}
                 />
                 {/* AI panel for title */}
-                {aiInline && aiInline.blockId === "__title__" && <AiInlinePanel fieldLabel="Title" />}
+                {aiInline && aiInline.blockId === "__title__" && renderAiInlinePanel("Title")}
 
-                <input
+                <textarea
                     className="editor-subtitle-input"
                     placeholder="Add a subtitle… (type / for AI)"
                     value={subtitle}
-                    onChange={e => { setSubtitle(e.target.value); setSaveStatus("unsaved"); }}
+                    rows={1}
+                    onChange={e => { setSubtitle(e.target.value); setSaveStatus("unsaved"); autoGrow(e.target); }}
                     onKeyDown={e => {
                         if (e.key === "/") {
                             e.preventDefault();
                             setAiInline({ blockId: "__subtitle__", action: null, fieldType: "subtitle" });
                         }
+                        if (e.key === "Enter") e.preventDefault();
                     }}
+                    ref={el => { if (el) autoGrow(el); }}
                 />
                 {/* AI panel for subtitle */}
-                {aiInline && aiInline.blockId === "__subtitle__" && <AiInlinePanel fieldLabel="Subtitle" />}
+                {aiInline && aiInline.blockId === "__subtitle__" && renderAiInlinePanel("Subtitle")}
 
                 {/* Blocks */}
                 {blocks.map((block) => (
                     <div
                         key={block.id}
-                        className={`block ${focusMode && activeBlockId !== block.id ? "dimmed" : ""}`}
+                        className={`block ${showBorders ? "show-borders" : ""} ${focusMode && activeBlockId !== block.id ? "dimmed" : ""}`}
                         draggable
                         onDragStart={() => handleDragStart(block.id)}
                         onDragOver={(e) => handleDragOver(e, block.id)}
@@ -2271,87 +1634,13 @@ export default function EditorPage({ params }) {
                     >
                         <div className="block-grab">⠿</div>
 
-                        {block.type === "divider" ? (
-                            <div className="block-divider" />
-                        ) : block.type === "code" ? (
-                            <div className="code-block" style={{ margin: "8px 0" }}>
-                                <div className="code-block-header">
-                                    <div className="code-block-dots"><span /><span /><span /></div>
-                                    <span className="code-block-lang">code</span>
-                                </div>
-                                <textarea
-                                    ref={el => blockRefs.current[block.id] = el}
-                                    value={block.content}
-                                    onChange={e => updateBlock(block.id, e.target.value)}
-                                    onFocus={() => setActiveBlockId(block.id)}
-                                    style={{
-                                        width: "100%",
-                                        minHeight: "80px",
-                                        padding: "16px",
-                                        border: "none",
-                                        background: "transparent",
-                                        color: "#c5d0de",
-                                        fontFamily: "var(--font-mono)",
-                                        fontSize: "0.82rem",
-                                        lineHeight: "1.65",
-                                        outline: "none",
-                                        resize: "vertical",
-                                        caretColor: "var(--accent)",
-                                    }}
-                                    placeholder="Write code…"
-                                />
-                            </div>
-                        ) : block.type === "quote" ? (
-                            <div className="block-quote">
-                                <textarea
-                                    ref={el => blockRefs.current[block.id] = el}
-                                    className="block-content"
-                                    value={block.content}
-                                    onChange={e => handleBlockInput(e, block)}
-                                    onKeyDown={e => handleBlockKeyDown(e, block)}
-                                    onFocus={() => setActiveBlockId(block.id)}
-                                    placeholder="Write a quote…"
-                                    rows={1}
-                                    style={{ fontStyle: "italic", resize: "none" }}
-                                />
-                            </div>
-                        ) : (
-                            <textarea
-                                ref={el => blockRefs.current[block.id] = el}
-                                className={`block-content ${block.type === "heading" ? "heading" : ""} ${block.type === "heading-h3" ? "heading-h3" : ""}`}
-                                value={block.content}
-                                onChange={e => handleBlockInput(e, block)}
-                                onKeyDown={e => handleBlockKeyDown(e, block)}
-                                onFocus={() => setActiveBlockId(block.id)}
-                                placeholder={block.type === "heading" ? "Heading…" : block.type === "heading-h3" ? "Subheading…" : "Write something, or type / for commands…"}
-                                rows={1}
-                                style={{ resize: "none" }}
-                            />
-                        )}
+                        {renderBlockContent(block)}
 
                         {/* Slash command menu */}
-                        {slashMenu === block.id && (
-                            <div className="slash-menu">
-                                <div className="slash-menu-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                    <span>Commands</span>
-                                    <button onClick={() => setSlashMenu(null)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.72rem", padding: "0 4px" }}>✕</button>
-                                </div>
-                                {getFilteredSlashCommands().map((cmd, i) => (
-                                    <div
-                                        key={cmd.cmd || cmd.label}
-                                        className={`slash-menu-item ${i === slashIndex ? "active" : ""}`}
-                                        onClick={() => executeSlashCommand(cmd, block.id)}
-                                        onMouseEnter={() => setSlashIndex(i)}
-                                    >
-                                        <span className="icon">{cmd.icon}</span>
-                                        {cmd.label}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        {slashMenu === block.id && renderSlashMenu(block)}
 
                         {/* AI inline prompt */}
-                        {aiInline && aiInline.blockId === block.id && <AiInlinePanel fieldLabel={block.type} />}
+                        {aiInline && aiInline.blockId === block.id && renderAiInlinePanel(block.type)}
                     </div>
                 ))}
             </div>
@@ -2381,7 +1670,7 @@ export default function EditorPage({ params }) {
             <CommandBar />
             <TitleGenModal />
             <ResearchPanel />
+            <ArchitectPanel />
         </div>
     );
->>>>>>> 5b5058c3e16e07d1a2d462924acbc2009bbcbd78
 }
