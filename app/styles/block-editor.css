@@ -378,13 +378,13 @@
   padding: 8px 14px 4px;
   font-size: 0.52rem;
   font-family: var(--font-mono);
-  color: var(--muted);
+  color: #7a8fa6;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
 .ed-slash-category-label:not(:first-child) {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid #1e2d3a;
   margin-top: 2px;
   padding-top: 10px;
 }
@@ -417,7 +417,7 @@
   padding: 18px 14px;
   text-align: center;
   font-size: 0.68rem;
-  color: var(--muted);
+  color: #7a8fa6;
 }
 
 /* ── Slash command menu ── */

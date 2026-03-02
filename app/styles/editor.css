@@ -561,14 +561,7 @@ body:has(.ed)::after {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.03);
   overflow: hidden;
   animation: slashIn 0.15s ease-out;
-  /* Override light-theme vars for dark panel */
-  --text: #ebf0f7;
-  --muted: #7a8fa6;
-  --line: #1e2d3a;
-  --line-strong: #2a3f52;
-  --accent: #c47a2a;
-  --accent-soft: rgba(196, 122, 42, 0.15);
-  color: var(--text);
+  color: #ebf0f7;
 }
 
 @keyframes slashIn {
@@ -588,9 +581,9 @@ body:has(.ed)::after {
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid #1e2d3a;
   font-size: 0.56rem;
-  color: var(--muted);
+  color: #7a8fa6;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -598,7 +591,7 @@ body:has(.ed)::after {
 .ed-slash-header kbd {
   font-size: 0.48rem;
   padding: 1px 5px;
-  border: 1px solid var(--line);
+  border: 1px solid #2a3f52;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.03);
   color: rgba(122, 143, 166, 0.5);
@@ -612,20 +605,20 @@ body:has(.ed)::after {
   border: none;
   border-left: 2px solid transparent;
   background: transparent;
-  color: var(--text);
+  color: #ebf0f7;
   font-family: var(--font-mono);
   font-size: 0.74rem;
   cursor: pointer;
-  transition: background var(--speed-fast), color var(--speed-fast), border-color var(--speed-fast);
+  transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
   width: 100%;
   text-align: left;
 }
 
 .ed-slash-item:hover,
 .ed-slash-item.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-left-color: var(--accent);
+  background: rgba(196, 122, 42, 0.15);
+  color: #c47a2a;
+  border-left-color: #c47a2a;
 }
 
 .ed-slash-icon {
@@ -634,7 +627,7 @@ body:has(.ed)::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line);
+  border: 1px solid #2a3f52;
   border-radius: 6px;
   font-size: 0.72rem;
   background: rgba(255, 255, 255, 0.08);
@@ -642,8 +635,8 @@ body:has(.ed)::after {
 }
 
 .ed-slash-item.active .ed-slash-icon {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: #c47a2a;
+  background: rgba(196, 122, 42, 0.15);
 }
 
 .ed-slash-item>div {
@@ -659,7 +652,7 @@ body:has(.ed)::after {
 
 .ed-slash-desc {
   font-size: 0.6rem;
-  color: var(--muted);
+  color: #7a8fa6;
 }
 
 .ed-slash-item.active .ed-slash-desc {
