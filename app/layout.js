@@ -4,6 +4,13 @@ import ConvexClientProvider from "./ConvexClientProvider";
 
 const GA_ID = "G-QZB2JFPLN6";
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
 export const metadata = {
   title: "Terminus",
   description: "Essays on fintech infrastructure, AI systems, and building products from first principles.",
