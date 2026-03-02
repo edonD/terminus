@@ -105,7 +105,7 @@
 }
 
 .editor-subtitle-input::placeholder {
-  color: #2a3f52;
+  color: var(--tertiary);
 }
 
 /* ── Editor blocks ── */
@@ -163,7 +163,7 @@
   width: 100%;
   border: none;
   background: transparent;
-  color: #d4dce8;
+  color: var(--text);
   font-family: var(--font-serif);
   font-size: 1.08rem;
   line-height: 1.82;
@@ -174,7 +174,7 @@
 }
 
 .block-content::placeholder {
-  color: #2a3f52;
+  color: var(--tertiary);
 }
 
 .block-content.heading {
@@ -533,7 +533,7 @@
   font-family: var(--font-serif);
   font-size: 0.92rem;
   line-height: 1.7;
-  color: #d4dce8;
+  color: var(--text);
 }
 
 .ai-result-actions {
@@ -542,8 +542,8 @@
   margin-top: 8px;
 }
 
-/* ── Tone & SEO indicators ── */
-.tone-badge {
+/* ── Readability indicator ── */
+.readability-badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -556,39 +556,66 @@
   color: var(--muted);
 }
 
-.tone-badge .dot {
+.readability-badge .dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: var(--accent);
 }
 
-.seo-gauge {
-  display: inline-flex;
+/* ── AI prompt inline ── */
+.ai-prompt-inline {
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 0.58rem;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(196, 122, 42, 0.25);
+  border-radius: 8px;
+  background: rgba(196, 122, 42, 0.03);
+}
+
+.ai-prompt-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  outline: none;
+  caret-color: var(--accent);
+}
+
+.ai-prompt-input:focus {
+  border-color: var(--accent);
+}
+
+/* ── AI generating indicator ── */
+.ai-generating-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
 }
 
-.seo-gauge-bar {
-  width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.seo-gauge-fill {
-  height: 100%;
-  border-radius: 2px;
+.ai-generating-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: var(--accent);
-  transition: width 0.4s ease;
+  animation: aiPulse 1s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }
 
 /* ── Editor footer ── */
@@ -614,4 +641,147 @@
 .editor-footer-indicators {
   display: flex;
   gap: 10px;
+}
+
+/* ═══════════════════════════════════════════════════
+   MOBILE TYPEWRITER MODE
+   ═══════════════════════════════════════════════════ */
+@media (max-width: 680px) {
+  /* ── Topbar: auto-hide + slim down ── */
+  .editor-topbar {
+    transition: transform 0.3s ease;
+    padding: 8px 12px;
+  }
+  .editor-topbar.topbar-hidden {
+    transform: translateY(-100%);
+  }
+  /* Hide non-essential buttons on mobile — keep back, save, publish */
+  .editor-topbar-right .btn-ghost:not(:nth-last-child(-n+2)) {
+    display: none;
+  }
+  /* Show only Save + Publish (last two buttons) */
+  .editor-topbar-right {
+    gap: 6px;
+  }
+
+  /* ── Footer: hidden while writing ── */
+  .editor-footer {
+    display: none;
+  }
+
+  /* ── Block grab handles: hidden ── */
+  .block-grab {
+    display: none;
+  }
+
+  /* ── Canvas: reduced side padding, room at bottom ── */
+  .editor-canvas {
+    padding: 24px 16px 120px;
+  }
+
+  /* ── Body text: typewriter font ── */
+  .block-content {
+    font-family: var(--font-typewriter);
+    font-size: 1rem;
+    line-height: 1.75;
+  }
+
+  /* ── Touch targets: 44px minimum ── */
+  .btn,
+  .btn-sm,
+  .slash-menu-item,
+  .format-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* ── Slash menu: bottom-sheet ── */
+  .slash-menu {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    max-height: 50vh;
+    border-radius: 16px 16px 0 0;
+    border: none;
+    border-top: 1px solid var(--line-strong);
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.4);
+    z-index: 300;
+    animation: slide-up 0.25s ease;
+  }
+
+  .ed-slash-menu {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    max-height: 50vh;
+    border-radius: 16px 16px 0 0;
+    border: none;
+    border-top: 1px solid var(--line-strong);
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.4);
+    z-index: 300;
+    animation: slide-up 0.25s ease;
+  }
+
+  @keyframes slide-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+
+  /* ── AI inline / copilot popover: bottom-sheet style ── */
+  .ai-inline {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 250;
+    margin: 0;
+    border-radius: 16px 16px 0 0;
+    border: none;
+    border-top: 1px solid rgba(196, 122, 42, 0.2);
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.4);
+    max-height: 60vh;
+    overflow-y: auto;
+    animation: slide-up 0.25s ease;
+  }
+
+  /* ── Format toolbar: bottom-anchored ── */
+  .format-toolbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    border-radius: 0;
+    justify-content: center;
+    z-index: 250;
+  }
+
+  /* ── Title & subtitle adjustments ── */
+  .editor-title-input {
+    font-size: 1.5rem;
+  }
+  .editor-subtitle-input {
+    font-size: 0.9rem;
+  }
+
+  /* ── Ghost text tap hint ── */
+  .ghost-tap-hint {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.6rem;
+    font-style: normal;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+  }
 }

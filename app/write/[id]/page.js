@@ -8,15 +8,12 @@ import CommandBar from "./components/CommandBar";
 import TitleGenModal from "./components/TitleGenModal";
 import ResearchPanel from "./components/ResearchPanel";
 import ArchitectPanel from "./components/ArchitectPanel";
-import AiInlinePanel from "./components/AiInlinePanel";
 import EditorTopbar from "./components/EditorTopbar";
 import EditorFooter from "./components/EditorFooter";
 
 /* ═══════════════════════════════════════════════════
    TONE & SLASH COMMAND DEFINITIONS
    ═══════════════════════════════════════════════════ */
-const TONE_OPTIONS = ["formal", "conversational", "technical", "persuasive"];
-
 const SLASH_COMMANDS = [
     // Basic blocks
     { cmd: "/text", label: "Text", icon: "¶", type: "paragraph", desc: "Plain text block", category: "basic" },
@@ -147,6 +144,9 @@ export default function EditorPage({ params }) {
             }
             setPostLoaded(true);
             setSaveStatus("saved");
+            // Initialize undo history with loaded state
+            const loadedBlocks = (existingPost.blocks && existingPost.blocks.length > 0) ? existingPost.blocks : [{ id: "b1", type: "paragraph", content: "" }];
+            historyRef.current = { stack: [{ blocks: JSON.parse(JSON.stringify(loadedBlocks)), title: existingPost.title || "", subtitle: existingPost.subtitle || "" }], index: 0, isUndoRedo: false };
         }
     }, [existingPost, isNew, postLoaded]);
 
@@ -156,22 +156,17 @@ export default function EditorPage({ params }) {
     const [slashMenu, setSlashMenu] = useState(null);
     const [slashFilter, setSlashFilter] = useState("");
     const [slashIndex, setSlashIndex] = useState(0);
-    const [aiInline, setAiInline] = useState(null); // { blockId, action, fieldType }
-    const [aiLoading, setAiLoading] = useState(false);
-    const [aiResult, setAiResult] = useState(null);
-    const [aiStreaming, setAiStreaming] = useState("");
-    const [customPrompt, setCustomPrompt] = useState("");
-    const [aiModel, setAiModel] = useState("claude"); // "claude" or "gpt"
-    const [aiChatHistory, setAiChatHistory] = useState([]); // [{ role, fieldType, prompt, response }]
+    const [aiGeneratingBlockId, setAiGeneratingBlockId] = useState(null);
+    const [aiPromptBlockId, setAiPromptBlockId] = useState(null);
+    const [aiPromptValue, setAiPromptValue] = useState("");
     const [showTitleGen, setShowTitleGen] = useState(false);
     const [titleSuggestions, setTitleSuggestions] = useState([]);
     const [titlesLoading, setTitlesLoading] = useState(false);
     const [cmdOpen, setCmdOpen] = useState(false);
     const [saveStatus, setSaveStatus] = useState("saved");
-    const [detectedTone, setDetectedTone] = useState("conversational");
-    const [seoScore, setSeoScore] = useState(72);
     const [dragId, setDragId] = useState(null);
     const [researchOpen, setResearchOpen] = useState(false);
+    const [researchMode, setResearchMode] = useState("deep"); // "quick" | "deep"
     const [researchTopic, setResearchTopic] = useState("");
     const [researchResult, setResearchResult] = useState("");
     const [researchStreaming, setResearchStreaming] = useState("");
@@ -185,15 +180,24 @@ export default function EditorPage({ params }) {
     const [isGhosting, setIsGhosting] = useState(false);
     const ghostDebounceRef = useRef(null);
 
+    // Mobile typewriter mode
+    const [isMobile, setIsMobile] = useState(false);
+    const [topbarHidden, setTopbarHidden] = useState(false);
+    const lastScrollY = useRef(0);
+    const [keyboardPadding, setKeyboardPadding] = useState(0);
+
+    // Inline formatting
+    const [formatToolbar, setFormatToolbar] = useState(null); // { top, left, blockId }
+    const [selectionRange, setSelectionRange] = useState(null); // { start, end }
+
     // Architect Phase 3
     const [showOutline, setShowOutline] = useState(false);
 
     const blockRefs = useRef({});
-    const aiInlineRef = useRef(aiInline);
+    const historyRef = useRef({ stack: [], index: -1, isUndoRedo: false });
     const slashMenuRef = useRef(slashMenu);
 
     // Keep refs in sync for keyboard shortcuts
-    useEffect(() => { aiInlineRef.current = aiInline; }, [aiInline]);
     useEffect(() => { slashMenuRef.current = slashMenu; }, [slashMenu]);
 
     // Focus Mode (Hemingway) Side Effects & Architect Body Class
@@ -216,20 +220,67 @@ export default function EditorPage({ params }) {
         }
     }, [focusMode, showOutline]);
 
+    // Mobile detection
+    useEffect(() => {
+        const mq = window.matchMedia("(max-width: 680px)");
+        const update = () => setIsMobile(mq.matches);
+        update();
+        mq.addEventListener("change", update);
+        return () => mq.removeEventListener("change", update);
+    }, []);
+
+    // Mobile: keyboard-aware bottom padding via visualViewport
+    useEffect(() => {
+        if (!isMobile || !window.visualViewport) return;
+        const vv = window.visualViewport;
+        const onResize = () => {
+            const keyboardHeight = window.innerHeight - vv.height;
+            setKeyboardPadding(keyboardHeight > 50 ? keyboardHeight : 0);
+        };
+        vv.addEventListener("resize", onResize);
+        return () => vv.removeEventListener("resize", onResize);
+    }, [isMobile]);
+
+    // Mobile: auto-hide topbar on scroll down, show on scroll up
+    useEffect(() => {
+        if (!isMobile) { setTopbarHidden(false); return; }
+        const onScroll = () => {
+            const y = window.scrollY;
+            if (y > lastScrollY.current + 10) setTopbarHidden(true);
+            else if (y < lastScrollY.current - 10) setTopbarHidden(false);
+            lastScrollY.current = y;
+        };
+        window.addEventListener("scroll", onScroll, { passive: true });
+        return () => window.removeEventListener("scroll", onScroll);
+    }, [isMobile]);
+
     // Typewriter Scrolling
     useEffect(() => {
         if (activeBlockId && blockRefs.current[activeBlockId]) {
-            // Slight delay to allow layout recalculation (e.g. adding a new block)
-            setTimeout(() => {
-                if (blockRefs.current[activeBlockId]) {
-                    blockRefs.current[activeBlockId].scrollIntoView({
-                        behavior: "smooth",
-                        block: "center",
-                    });
-                }
-            }, 50);
+            const el = blockRefs.current[activeBlockId];
+            if (isMobile && window.visualViewport) {
+                // Wait for soft keyboard to finish opening, then position block in top third
+                setTimeout(() => {
+                    if (!blockRefs.current[activeBlockId]) return;
+                    const vv = window.visualViewport;
+                    const rect = el.getBoundingClientRect();
+                    const targetY = vv.height * 0.3;
+                    const scrollBy = rect.top - targetY;
+                    window.scrollBy({ top: scrollBy, behavior: "smooth" });
+                }, 350);
+            } else {
+                // Desktop: slight delay then center
+                setTimeout(() => {
+                    if (blockRefs.current[activeBlockId]) {
+                        blockRefs.current[activeBlockId].scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                        });
+                    }
+                }, 50);
+            }
         }
-    }, [activeBlockId]);
+    }, [activeBlockId, isMobile]);
 
     // Auto-grow all textareas on mount / block changes
     useEffect(() => {
@@ -241,41 +292,32 @@ export default function EditorPage({ params }) {
         });
     }, [blocks]);
 
-    // Auto-detect tone from content
-    useEffect(() => {
-        const allText = blocks.map(b => b.content).join(" ").toLowerCase();
-        if (allText.includes("furthermore") || allText.includes("consequently")) setDetectedTone("formal");
-        else if (allText.includes("function") || allText.includes("const") || allText.includes("api")) setDetectedTone("technical");
-        else if (allText.includes("you") || allText.includes("let's")) setDetectedTone("conversational");
-        else setDetectedTone("persuasive");
-    }, [blocks]);
-
-    // Update SEO score
-    useEffect(() => {
-        const wordCount = getWordCount();
-        let score = 50;
-        if (title.length > 20 && title.length < 80) score += 15;
-        if (subtitle.length > 40) score += 10;
-        if (wordCount > 500) score += 10;
-        if (blocks.some(b => b.type === "heading")) score += 8;
-        if (wordCount > 1000) score += 7;
-        setSeoScore(Math.min(98, score));
-    }, [title, subtitle, blocks]);
-
     // Global keyboard shortcuts
     useEffect(() => {
         const handler = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setCmdOpen(o => !o); }
             if ((e.metaKey || e.ctrlKey) && e.key === "t") { e.preventDefault(); generateTitles(); }
             if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); handleSave("draft"); }
+            if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+            if ((e.metaKey || e.ctrlKey) && e.key === "z" && e.shiftKey) { e.preventDefault(); redo(); }
+            if ((e.metaKey || e.ctrlKey) && e.key === "y") { e.preventDefault(); redo(); }
             if (e.key === "Escape") {
-                if (aiInlineRef.current) { setAiInline(null); setAiResult(null); setAiStreaming(""); setAiLoading(false); }
+                setAiPromptBlockId(null);
+                setAiPromptValue("");
                 // slashMenu ESC is handled at the block level in handleBlockKeyDown
             }
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
     }, []);
+
+    // Dismiss format toolbar on click outside
+    useEffect(() => {
+        if (!formatToolbar) return;
+        const dismiss = () => setFormatToolbar(null);
+        const timer = setTimeout(() => document.addEventListener("mousedown", dismiss), 50);
+        return () => { clearTimeout(timer); document.removeEventListener("mousedown", dismiss); };
+    }, [formatToolbar]);
 
     const getWordCount = useCallback(() => {
         const text = [title, subtitle, ...blocks.map(b => b.content)].join(" ");
@@ -291,6 +333,30 @@ export default function EditorPage({ params }) {
         const mins = Math.max(1, Math.ceil(words / 250));
         return `${mins} min`;
     }, [getWordCount]);
+
+    const getReadability = useCallback(() => {
+        const text = [title, subtitle, ...blocks.map(b => b.content)].join(" ").trim();
+        const words = text.split(/\s+/).filter(Boolean);
+        if (words.length < 10) return { score: 0, label: "Too short" };
+        const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+        const syllableCount = (word) => {
+            word = word.toLowerCase().replace(/[^a-z]/g, "");
+            if (word.length <= 3) return 1;
+            word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, "");
+            word = word.replace(/^y/, "");
+            const vowelGroups = word.match(/[aeiouy]{1,2}/g);
+            return vowelGroups ? vowelGroups.length : 1;
+        };
+        const totalSyllables = words.reduce((sum, w) => sum + syllableCount(w), 0);
+        const grade = 0.39 * (words.length / sentences.length) + 11.8 * (totalSyllables / words.length) - 15.59;
+        const rounded = Math.max(1, Math.round(grade));
+        let label;
+        if (rounded <= 5) label = "Very Easy";
+        else if (rounded <= 12) label = `Grade ${rounded}`;
+        else if (rounded <= 16) label = "College";
+        else label = "Graduate";
+        return { score: rounded, label };
+    }, [title, subtitle, blocks]);
 
     const getDraftContext = useCallback(() => {
         return [title, subtitle, ...blocks.map(b => b.content)].filter(Boolean).join("\n\n");
@@ -362,19 +428,20 @@ export default function EditorPage({ params }) {
             const excerpt = subtitle || blocks.find(b => b.content?.trim())?.content?.substring(0, 200) || "";
             const rawLines = blocks
                 .map(b => {
-                    if (b.type === "heading") return `<h2>${b.content}</h2>`;
-                    if (b.type === "heading-h3") return `<h3>${b.content}</h3>`;
-                    if (b.type === "heading-h4") return `<h4>${b.content}</h4>`;
-                    if (b.type === "quote") return `<blockquote>${b.content}</blockquote>`;
+                    const fmt = (text) => parseInlineMarkdown(text);
+                    if (b.type === "heading") return `<h2>${fmt(b.content)}</h2>`;
+                    if (b.type === "heading-h3") return `<h3>${fmt(b.content)}</h3>`;
+                    if (b.type === "heading-h4") return `<h4>${fmt(b.content)}</h4>`;
+                    if (b.type === "quote") return `<blockquote>${fmt(b.content)}</blockquote>`;
                     if (b.type === "code") return `<pre><code>${b.content}</code></pre>`;
                     if (b.type === "divider") return `<hr />`;
-                    if (b.type === "bullet-list") return `<li class="bullet">${b.content}</li>`;
-                    if (b.type === "number-list") return `<li class="numbered">${b.content}</li>`;
-                    if (b.type === "todo") return `<div class="todo-item${b.metadata?.checked ? " checked" : ""}"><span class="todo-checkbox">${b.metadata?.checked ? "☑" : "☐"}</span>${b.content}</div>`;
-                    if (b.type === "toggle") return `<details${b.metadata?.expanded ? " open" : ""}><summary>${b.content}</summary>${b.metadata?.body || ""}</details>`;
-                    if (b.type === "callout") return `<div class="callout"><span class="callout-emoji">${b.metadata?.emoji || "💡"}</span><span>${b.content}</span></div>`;
+                    if (b.type === "bullet-list") return `<li class="bullet">${fmt(b.content)}</li>`;
+                    if (b.type === "number-list") return `<li class="numbered">${fmt(b.content)}</li>`;
+                    if (b.type === "todo") return `<div class="todo-item${b.metadata?.checked ? " checked" : ""}"><span class="todo-checkbox">${b.metadata?.checked ? "☑" : "☐"}</span>${fmt(b.content)}</div>`;
+                    if (b.type === "toggle") return `<details${b.metadata?.expanded ? " open" : ""}><summary>${fmt(b.content)}</summary>${b.metadata?.body || ""}</details>`;
+                    if (b.type === "callout") return `<div class="callout"><span class="callout-emoji">${b.metadata?.emoji || "💡"}</span><span>${fmt(b.content)}</span></div>`;
                     if (b.type === "image") return b.content ? `<figure><img src="${b.content}" alt="" />${b.metadata?.caption ? `<figcaption>${b.metadata.caption}</figcaption>` : ""}</figure>` : "";
-                    return `<p>${b.content}</p>`;
+                    return `<p>${fmt(b.content)}</p>`;
                 })
                 .filter(Boolean);
             // Wrap consecutive <li> items in <ul> or <ol>
@@ -420,16 +487,60 @@ export default function EditorPage({ params }) {
         }
     };
 
+    // Undo/Redo history
+    const pushHistory = useCallback((blocksSnapshot, titleSnap, subtitleSnap) => {
+        const h = historyRef.current;
+        if (h.isUndoRedo) return;
+        const snapshot = { blocks: JSON.parse(JSON.stringify(blocksSnapshot)), title: titleSnap, subtitle: subtitleSnap };
+        h.stack = h.stack.slice(0, h.index + 1);
+        h.stack.push(snapshot);
+        if (h.stack.length > 50) h.stack.shift();
+        h.index = h.stack.length - 1;
+    }, []);
+
+    const setBlocksWithHistory = useCallback((updater) => {
+        setBlocks(prev => {
+            pushHistory(prev, title, subtitle);
+            return typeof updater === "function" ? updater(prev) : updater;
+        });
+        setSaveStatus("unsaved");
+    }, [pushHistory, title, subtitle]);
+
+    const undo = useCallback(() => {
+        const h = historyRef.current;
+        if (h.index <= 0) return;
+        h.isUndoRedo = true;
+        h.index--;
+        const snapshot = h.stack[h.index];
+        setBlocks(snapshot.blocks);
+        setTitle(snapshot.title);
+        setSubtitle(snapshot.subtitle);
+        setSaveStatus("unsaved");
+        h.isUndoRedo = false;
+    }, []);
+
+    const redo = useCallback(() => {
+        const h = historyRef.current;
+        if (h.index >= h.stack.length - 1) return;
+        h.isUndoRedo = true;
+        h.index++;
+        const snapshot = h.stack[h.index];
+        setBlocks(snapshot.blocks);
+        setTitle(snapshot.title);
+        setSubtitle(snapshot.subtitle);
+        setSaveStatus("unsaved");
+        h.isUndoRedo = false;
+    }, []);
+
     // Block operations
     const updateBlock = (id, content) => {
-        setBlocks(prev => prev.map(b => b.id === id ? { ...b, content } : b));
-        setSaveStatus("unsaved");
+        setBlocksWithHistory(prev => prev.map(b => b.id === id ? { ...b, content } : b));
     };
 
     const addBlockAfter = (afterId, type = "paragraph", content = "", metadata = undefined) => {
         const newId = `b${Date.now()}`;
         const meta = metadata || DEFAULT_METADATA[type] || undefined;
-        setBlocks(prev => {
+        setBlocksWithHistory(prev => {
             const idx = prev.findIndex(b => b.id === afterId);
             const newBlocks = [...prev];
             const newBlock = { id: newId, type, content };
@@ -445,12 +556,11 @@ export default function EditorPage({ params }) {
 
     const deleteBlock = (id) => {
         if (blocks.length <= 1) {
-            // If it's the last block, reset it to an empty paragraph instead of refusing
-            setBlocks([{ id: `b${Date.now()}`, type: "paragraph", content: "" }]);
+            setBlocksWithHistory(() => [{ id: `b${Date.now()}`, type: "paragraph", content: "" }]);
             return;
         }
         const idx = blocks.findIndex(b => b.id === id);
-        setBlocks(prev => prev.filter(b => b.id !== id));
+        setBlocksWithHistory(prev => prev.filter(b => b.id !== id));
         const prevBlock = blocks[idx - 1];
         if (prevBlock && blockRefs.current[prevBlock.id]) {
             blockRefs.current[prevBlock.id].focus();
@@ -459,21 +569,19 @@ export default function EditorPage({ params }) {
 
     // Block metadata helpers
     const updateBlockMetadata = (blockId, updates) => {
-        setBlocks(prev => prev.map(b =>
+        setBlocksWithHistory(prev => prev.map(b =>
             b.id === blockId ? { ...b, metadata: { ...(b.metadata || {}), ...updates } } : b
         ));
-        setSaveStatus("unsaved");
     };
 
     const toggleTodoCheck = (blockId) => {
-        setBlocks(prev => prev.map(b =>
+        setBlocksWithHistory(prev => prev.map(b =>
             b.id === blockId ? { ...b, metadata: { ...(b.metadata || {}), checked: !(b.metadata?.checked) } } : b
         ));
-        setSaveStatus("unsaved");
     };
 
     const toggleToggleExpand = (blockId) => {
-        setBlocks(prev => prev.map(b =>
+        setBlocksWithHistory(prev => prev.map(b =>
             b.id === blockId ? { ...b, metadata: { ...(b.metadata || {}), expanded: !(b.metadata?.expanded) } } : b
         ));
     };
@@ -500,12 +608,21 @@ export default function EditorPage({ params }) {
 
     const convertBlockType = (blockId, newType) => {
         const meta = DEFAULT_METADATA[newType] || undefined;
-        setBlocks(prev => prev.map(b =>
+        setBlocksWithHistory(prev => prev.map(b =>
             b.id === blockId ? { ...b, type: newType, content: "", metadata: meta ? { ...meta } : undefined } : b
         ));
     };
 
     // Handle block key events
+    // Accept ghost text (shared by Tab key and mobile tap)
+    const acceptGhostText = (blockId) => {
+        const block = blocks.find(b => b.id === blockId);
+        if (!block || !ghostText) return;
+        updateBlock(blockId, block.content + ghostText);
+        setGhostText("");
+        setIsGhosting(false);
+    };
+
     const handleBlockKeyDown = (e, block) => {
         // Slash menu navigation (only intercept specific keys)
         if (slashMenu) {
@@ -527,13 +644,45 @@ export default function EditorPage({ params }) {
             // handleBlockInput (onChange) manages opening/closing the menu based on content
         }
 
+        // Inline formatting shortcuts
+        if ((e.metaKey || e.ctrlKey) && block.type !== "code") {
+            const el = e.target;
+            const hasSelection = el.selectionStart !== el.selectionEnd;
+            if (e.key === "b" && hasSelection) {
+                e.preventDefault();
+                setSelectionRange({ start: el.selectionStart, end: el.selectionEnd });
+                setFormatToolbar({ blockId: block.id });
+                applyFormat("**");
+                return;
+            }
+            if (e.key === "i" && hasSelection) {
+                e.preventDefault();
+                setSelectionRange({ start: el.selectionStart, end: el.selectionEnd });
+                setFormatToolbar({ blockId: block.id });
+                applyFormat("*");
+                return;
+            }
+            if (e.key === "k" && hasSelection) {
+                e.preventDefault();
+                setSelectionRange({ start: el.selectionStart, end: el.selectionEnd });
+                setFormatToolbar({ blockId: block.id });
+                applyLink();
+                return;
+            }
+        }
+
         // Normal block key handling (runs whether or not slash menu was open)
-        if (e.key === "Tab" && ghostText && block.id === activeBlockId) {
+        if (e.key === "Escape" && ghostText && block.id === activeBlockId) {
             e.preventDefault();
-            // Accept ghost text
-            updateBlock(block.id, block.content + ghostText);
             setGhostText("");
             setIsGhosting(false);
+            if (ghostDebounceRef.current) clearTimeout(ghostDebounceRef.current);
+            return;
+        }
+
+        if (e.key === "Tab" && ghostText && block.id === activeBlockId) {
+            e.preventDefault();
+            acceptGhostText(block.id);
             return;
         }
 
@@ -582,7 +731,7 @@ export default function EditorPage({ params }) {
                     context: getStructuredContext(),
                     fieldType: block.type,
                     fieldContent: currentText,
-                    model: aiModel,
+                    model: "claude",
                 }),
             });
             if (res.ok) {
@@ -596,6 +745,64 @@ export default function EditorPage({ params }) {
         } finally {
             setIsGhosting(false);
         }
+    };
+
+    // Inline formatting helpers
+    const handleTextSelect = (e, block) => {
+        const el = e.target;
+        const start = el.selectionStart;
+        const end = el.selectionEnd;
+        if (start === end || block.type === "code") {
+            setFormatToolbar(null);
+            return;
+        }
+        const rect = el.getBoundingClientRect();
+        // Position toolbar above the textarea
+        setFormatToolbar({ top: rect.top - 40, left: rect.left + (rect.width / 2) - 80, blockId: block.id });
+        setSelectionRange({ start, end });
+    };
+
+    const applyFormat = (wrapper) => {
+        if (!formatToolbar || !selectionRange) return;
+        const block = blocks.find(b => b.id === formatToolbar.blockId);
+        if (!block) return;
+        const { start, end } = selectionRange;
+        const text = block.content;
+        const selected = text.substring(start, end);
+        // Check if already wrapped - if so, unwrap
+        const wrapLen = wrapper.length;
+        const before = text.substring(start - wrapLen, start);
+        const after = text.substring(end, end + wrapLen);
+        let newContent;
+        if (before === wrapper && after === wrapper) {
+            newContent = text.substring(0, start - wrapLen) + selected + text.substring(end + wrapLen);
+        } else {
+            newContent = text.substring(0, start) + wrapper + selected + wrapper + text.substring(end);
+        }
+        updateBlock(formatToolbar.blockId, newContent);
+        setFormatToolbar(null);
+    };
+
+    const applyLink = () => {
+        if (!formatToolbar || !selectionRange) return;
+        const block = blocks.find(b => b.id === formatToolbar.blockId);
+        if (!block) return;
+        const { start, end } = selectionRange;
+        const selected = block.content.substring(start, end);
+        const url = prompt("Enter URL:");
+        if (!url) return;
+        const newContent = block.content.substring(0, start) + `[${selected}](${url})` + block.content.substring(end);
+        updateBlock(formatToolbar.blockId, newContent);
+        setFormatToolbar(null);
+    };
+
+    const parseInlineMarkdown = (text) => {
+        if (!text) return text;
+        return text
+            .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+            .replace(/\*(.+?)\*/g, "<em>$1</em>")
+            .replace(/`(.+?)`/g, "<code>$1</code>")
+            .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
     };
 
     const autoGrow = (el) => {
@@ -621,7 +828,7 @@ export default function EditorPage({ params }) {
                 if (activeBlockId === block.id) {
                     fetchGhostText(block, value);
                 }
-            }, 800);
+            }, 1200);
         }
 
         // Markdown shortcuts
@@ -650,7 +857,7 @@ export default function EditorPage({ params }) {
             convertBlockType(block.id, "todo");
         }
         if (value === "---") {
-            setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, type: "divider", content: "" } : b));
+            setBlocksWithHistory(prev => prev.map(b => b.id === block.id ? { ...b, type: "divider", content: "" } : b));
             addBlockAfter(block.id);
         }
 
@@ -697,8 +904,8 @@ export default function EditorPage({ params }) {
                 setResearchOpen(true);
                 return;
             }
-            setAiInline({ blockId, action: cmd.action });
             updateBlock(blockId, textBefore);
+            streamAIIntoBlock(cmd.action, getFieldContent(blockId) || textBefore, blockId);
             return;
         }
 
@@ -710,25 +917,26 @@ export default function EditorPage({ params }) {
                 const newId = addBlockAfter(blockId, "divider", "");
                 addBlockAfter(newId);
             } else {
-                setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: "divider", content: "" } : b));
+                setBlocksWithHistory(prev => prev.map(b => b.id === blockId ? { ...b, type: "divider", content: "" } : b));
                 addBlockAfter(blockId);
             }
         } else if (cmd.type === "ai") {
-            setAiInline({ blockId, action: null });
             updateBlock(blockId, textBefore);
+            setAiPromptBlockId(blockId);
+            setAiPromptValue("");
         } else if (cmd.type === "image") {
             updateBlock(blockId, textBefore);
             if (textBefore) {
                 addBlockAfter(blockId, "image", "");
             } else {
-                setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, type: "image", content: "" } : b));
+                setBlocksWithHistory(prev => prev.map(b => b.id === blockId ? { ...b, type: "image", content: "" } : b));
             }
         } else {
             if (textBefore) {
                 updateBlock(blockId, textBefore);
                 addBlockAfter(blockId, cmd.type, "", meta);
             } else {
-                setBlocks(prev => prev.map(b =>
+                setBlocksWithHistory(prev => prev.map(b =>
                     b.id === blockId
                         ? { ...b, type: cmd.type, content: "", ...(meta ? { metadata: { ...meta } } : {}) }
                         : b
@@ -738,106 +946,43 @@ export default function EditorPage({ params }) {
     };
 
     /* ═══════════════════════════════════════════════════
-       AI EXECUTION — Real Claude streaming with history
+       AI EXECUTION — Stream directly into new block
        ═══════════════════════════════════════════════════ */
-    const executeAI = async (action, input) => {
-        setAiLoading(true);
-        setAiResult(null);
-        setAiStreaming("");
+    const streamAIIntoBlock = async (action, input, afterBlockId, customPromptText) => {
+        const newId = addBlockAfter(afterBlockId, "paragraph", "");
+        setAiGeneratingBlockId(newId);
 
-        const fieldType = aiInline ? getFieldType(aiInline.blockId) : "paragraph";
-        const fieldContent = aiInline ? getFieldContent(aiInline.blockId) : input;
+        const fieldType = getFieldType(afterBlockId);
         let accumulated = "";
 
         await streamAI({
             action,
             input: input || "",
             context: getStructuredContext(),
+            customPrompt: customPromptText,
             fieldType,
-            fieldContent,
-            chatHistory: aiChatHistory.slice(-10), // last 10 interactions
-            model: aiModel,
+            fieldContent: input,
+            model: "claude",
             onChunk: (text) => {
                 accumulated += text;
-                setAiStreaming(accumulated);
+                setBlocks(prev => prev.map(b => b.id === newId ? { ...b, content: accumulated } : b));
             },
             onDone: () => {
-                setAiResult(accumulated);
-                setAiStreaming("");
-                setAiLoading(false);
-                // Save to chat history
-                setAiChatHistory(prev => [...prev, {
-                    role: "assistant",
-                    fieldType,
-                    prompt: `[${action}] on ${fieldType}: "${(input || "").substring(0, 100)}"`,
-                    response: accumulated.substring(0, 300),
-                    timestamp: Date.now(),
-                }]);
+                setAiGeneratingBlockId(null);
             },
             onError: (err) => {
-                setAiResult(`Error: ${err}`);
-                setAiStreaming("");
-                setAiLoading(false);
+                setBlocks(prev => prev.map(b => b.id === newId ? { ...b, content: `Error: ${err}` } : b));
+                setAiGeneratingBlockId(null);
             },
         });
     };
 
-    const executeCustomAI = async () => {
-        if (!customPrompt.trim()) return;
-        setAiLoading(true);
-        setAiResult(null);
-        setAiStreaming("");
-
-        const fieldType = aiInline ? getFieldType(aiInline.blockId) : "paragraph";
-        const fieldContent = aiInline ? getFieldContent(aiInline.blockId) : "";
-        let accumulated = "";
-        const promptText = customPrompt;
-        setCustomPrompt("");
-
-        await streamAI({
-            action: "custom",
-            input: fieldContent,
-            context: getStructuredContext(),
-            customPrompt: promptText,
-            fieldType,
-            fieldContent,
-            chatHistory: aiChatHistory.slice(-10),
-            model: aiModel,
-            onChunk: (text) => {
-                accumulated += text;
-                setAiStreaming(accumulated);
-            },
-            onDone: () => {
-                setAiResult(accumulated);
-                setAiStreaming("");
-                setAiLoading(false);
-                setAiChatHistory(prev => [...prev, {
-                    role: "assistant",
-                    fieldType,
-                    prompt: promptText.substring(0, 100),
-                    response: accumulated.substring(0, 300),
-                    timestamp: Date.now(),
-                }]);
-            },
-            onError: (err) => {
-                setAiResult(`Error: ${err}`);
-                setAiStreaming("");
-                setAiLoading(false);
-            },
-        });
-    };
-
-    const insertAiResult = () => {
-        if (!aiResult || !aiInline) return;
-        if (aiInline.blockId === "__title__") {
-            setTitle(aiResult.trim());
-        } else if (aiInline.blockId === "__subtitle__") {
-            setSubtitle(aiResult.trim());
-        } else {
-            addBlockAfter(aiInline.blockId, "paragraph", aiResult);
-        }
-        setAiInline(null);
-        setAiResult(null);
+    const submitAiPrompt = (blockId) => {
+        if (!aiPromptValue.trim()) return;
+        const blockContent = getFieldContent(blockId);
+        setAiPromptBlockId(null);
+        streamAIIntoBlock("custom", blockContent, blockId, aiPromptValue.trim());
+        setAiPromptValue("");
     };
 
     /* ═══════════════════════════════════════════════════
@@ -882,93 +1027,9 @@ export default function EditorPage({ params }) {
         const newBlocks = [...blocks];
         const [moved] = newBlocks.splice(dragIdx, 1);
         newBlocks.splice(overIdx, 0, moved);
-        setBlocks(newBlocks);
+        setBlocksWithHistory(() => newBlocks);
     };
     const handleDragEnd = () => setDragId(null);
-
-    /* ═══ AI INLINE PANEL WRAPPER ═══ */
-    const renderAiInlinePanel = (fieldLabel) => {
-        const fieldType = getFieldType(aiInline?.blockId);
-        const fieldContent = getFieldContent(aiInline?.blockId);
-        return (
-            <div className="ai-inline" style={{ marginBottom: "12px" }}>
-                <div className="ai-inline-header" style={{ justifyContent: "space-between" }}>
-                    <span><span>✦</span> AI Co-Pilot — <strong>{fieldLabel || fieldType}</strong>
-                        {fieldContent ? <span style={{ fontSize: "0.58rem", color: "var(--muted)", marginLeft: "8px" }}>“{fieldContent.substring(0, 60)}{fieldContent.length > 60 ? "…" : ""}”</span> : null}
-                    </span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <div style={{ display: "flex", borderRadius: "4px", overflow: "hidden", border: "1px solid var(--line-strong)", fontSize: "0.6rem" }}>
-                            <button
-                                onClick={() => setAiModel("claude")}
-                                style={{ padding: "2px 8px", background: aiModel === "claude" ? "var(--accent)" : "transparent", color: aiModel === "claude" ? "#000" : "var(--muted)", border: "none", cursor: "pointer", fontWeight: 600 }}
-                            >Claude</button>
-                            <button
-                                onClick={() => setAiModel("gpt")}
-                                style={{ padding: "2px 8px", background: aiModel === "gpt" ? "var(--accent)" : "transparent", color: aiModel === "gpt" ? "#000" : "var(--muted)", border: "none", cursor: "pointer", fontWeight: 600 }}
-                            >GPT-5-mini</button>
-                        </div>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setAiInline(null); setAiResult(null); setAiStreaming(""); setAiLoading(false); }} style={{ padding: "2px 8px", fontSize: "0.72rem" }}>✕</button>
-                    </div>
-                </div>
-
-                {/* Recent history */}
-                {aiChatHistory.length > 0 && (
-                    <div style={{ marginBottom: "8px", maxHeight: "100px", overflowY: "auto", borderBottom: "1px solid var(--line)", paddingBottom: "8px" }}>
-                        <div style={{ fontSize: "0.56rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Recent</div>
-                        {aiChatHistory.slice(-3).map((h, i) => (
-                            <div key={i} style={{ fontSize: "0.62rem", color: "var(--muted)", padding: "2px 0", display: "flex", gap: "6px" }}>
-                                <span style={{ color: "var(--accent)" }}>✦</span>
-                                <span>{h.prompt} → <em>{h.response.substring(0, 50)}…</em></span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                <div className="ai-inline-actions">
-                    {SLASH_COMMANDS.filter(c => c.action && c.action !== "research").map(cmd => (
-                        <button key={cmd.action} className="btn btn-ghost btn-sm" onClick={() => executeAI(cmd.action, fieldContent)} disabled={aiLoading}>{cmd.label}</button>
-                    ))}
-                </div>
-
-                {/* Custom prompt */}
-                <div style={{ marginTop: "10px", display: "flex", gap: "6px" }}>
-                    <input
-                        style={{ flex: 1, padding: "7px 12px", border: "1px solid var(--line-strong)", borderRadius: "6px", background: "var(--bg-0)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: "0.72rem", outline: "none", caretColor: "var(--accent)" }}
-                        placeholder="Type a custom prompt… e.g. 'make this more persuasive'"
-                        value={customPrompt}
-                        onChange={e => setCustomPrompt(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); executeCustomAI(); } }}
-                        disabled={aiLoading}
-                        autoFocus
-                    />
-                    <button className="btn btn-primary btn-sm" onClick={executeCustomAI} disabled={aiLoading || !customPrompt.trim()}>⏎</button>
-                </div>
-
-                {/* Streaming */}
-                {aiLoading && (
-                    <div style={{ marginTop: "10px" }}>
-                        <div style={{ color: "var(--accent)", fontSize: "0.68rem", marginBottom: "6px" }}>✦ {aiStreaming ? "Streaming…" : "Thinking…"}</div>
-                        {aiStreaming ? (
-                            <div className="ai-result" style={{ opacity: 0.85, userSelect: "text", cursor: "text" }}>{aiStreaming}<span className="ai-cursor">▊</span></div>
-                        ) : (<><div className="skeleton-line w80" style={{ marginTop: "4px" }} /><div className="skeleton-line w60" /></>)}
-                    </div>
-                )}
-
-                {/* Result */}
-                {aiResult && !aiLoading && (
-                    <div className="ai-result">
-                        <div style={{ userSelect: "text", cursor: "text", whiteSpace: "pre-wrap" }}>{aiResult}</div>
-                        <div className="ai-result-actions">
-                            <button className="btn btn-primary btn-sm" onClick={insertAiResult}>↵ Insert</button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(aiResult); }}>Copy</button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => executeAI(aiInline?.action || "rewrite", aiResult)}>↻ Retry</button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => { setAiResult(null); setAiInline(null); }}>Dismiss</button>
-                        </div>
-                    </div>
-                )}
-            </div>
-        );
-    };
 
     /* ═══ COMMAND BAR ═══ */
     const CommandBar = () => {
@@ -1088,7 +1149,8 @@ export default function EditorPage({ params }) {
                 body: JSON.stringify({
                     topic,
                     context: getStructuredContext(),
-                    model: aiModel,
+                    model: "claude",
+                    mode: researchMode,
                 }),
             });
 
@@ -1135,30 +1197,88 @@ export default function EditorPage({ params }) {
     const insertResearch = () => {
         const content = researchResult;
         if (!content) return;
-        // Split into paragraphs and add as new blocks
         const paragraphs = content.split("\n\n").filter(Boolean);
-        let lastId = blocks[blocks.length - 1]?.id || "b1";
-        paragraphs.forEach((p) => {
-            const isHeading = p.startsWith("## ") || p.startsWith("# ");
-            const newId = `b${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-            setBlocks(prev => {
-                const idx = prev.findIndex(b => b.id === lastId);
-                const newBlocks = [...prev];
-                newBlocks.splice(idx + 1, 0, {
+        setBlocksWithHistory(prev => {
+            const newBlocks = [...prev];
+            let insertIdx = newBlocks.length;
+            paragraphs.forEach((p) => {
+                const isHeading = p.startsWith("## ") || p.startsWith("# ");
+                const newId = `b${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+                newBlocks.splice(insertIdx, 0, {
                     id: newId,
                     type: isHeading ? "heading" : "paragraph",
                     content: isHeading ? p.replace(/^#+\s*/, "").replace(/[📊🏢📈🔥💡🔗]\s*/g, "") : p,
                 });
-                return newBlocks;
+                insertIdx++;
             });
-            lastId = newId;
+            return newBlocks;
         });
         setResearchOpen(false);
+    };
+
+    const parseResearchSections = (text) => {
+        if (!text) return [];
+        const sections = [];
+        const lines = text.split("\n");
+        let current = null;
+        for (const line of lines) {
+            const match = line.match(/^##\s*([📊🏢📈🔥💡🔗]?\s*.+)/);
+            if (match) {
+                if (current) sections.push(current);
+                current = { title: match[1].trim(), content: "" };
+            } else if (current) {
+                current.content += (current.content ? "\n" : "") + line;
+            } else {
+                if (!sections.length && line.trim()) {
+                    sections.push({ title: "Summary", content: line });
+                }
+            }
+        }
+        if (current) sections.push(current);
+        return sections;
     };
 
     const ResearchPanel = () => {
         if (!researchOpen) return null;
         const displayContent = researchStreaming || researchResult;
+        const sections = displayContent ? parseResearchSections(displayContent) : [];
+
+        const renderResults = () => {
+            if (!displayContent) return null;
+            if (researchStreaming) {
+                return (
+                    <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                        {displayContent}
+                        <span className="ai-cursor">▊</span>
+                    </div>
+                );
+            }
+            if (researchMode === "quick" || sections.length === 0) {
+                // Quick mode: plain bullet list
+                const bullets = displayContent.split("\n").filter(l => l.trim());
+                return (
+                    <ul style={{ paddingLeft: "16px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                        {bullets.map((line, i) => (
+                            <li key={i} style={{ fontSize: "0.72rem", lineHeight: 1.6 }}>
+                                {line.replace(/^[-•*]\s*/, "").replace(/^\d+\.\s*/, "")}
+                            </li>
+                        ))}
+                    </ul>
+                );
+            }
+            // Deep mode: collapsible sections
+            return sections.map((section, i) => (
+                <details key={i} open={i === 0} style={{ marginBottom: "8px", border: "1px solid var(--line)", borderRadius: "8px", overflow: "hidden" }}>
+                    <summary style={{ padding: "10px 14px", cursor: "pointer", fontWeight: 600, fontSize: "0.74rem", color: "var(--text)", background: "rgba(228, 221, 210, 0.3)" }}>
+                        {section.title}
+                    </summary>
+                    <div style={{ padding: "10px 14px", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: "0.7rem", lineHeight: 1.65 }}>
+                        {section.content.trim()}
+                    </div>
+                </details>
+            ));
+        };
+
         return (
             <div style={{
                 position: "fixed", top: 0, right: 0, bottom: 0, width: "480px", maxWidth: "100vw",
@@ -1173,16 +1293,29 @@ export default function EditorPage({ params }) {
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                 }}>
                     <div>
-                        <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>🔍 Research Agent</div>
+                        <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>Research Agent</div>
                         <div style={{ fontSize: "0.6rem", color: "var(--muted)", marginTop: "2px" }}>
-                            Multi-query deep search · {aiModel === "gpt" ? "GPT-5-mini" : "Claude"}
+                            {researchMode === "quick" ? "Quick search · bullet points" : "Deep research · multi-angle synthesis"}
                         </div>
                     </div>
-                    <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => { setResearchOpen(false); setResearchLoading(false); }}
-                        style={{ padding: "4px 10px", fontSize: "0.8rem" }}
-                    >✕</button>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        {/* Mode toggle */}
+                        <div style={{ display: "flex", borderRadius: "6px", overflow: "hidden", border: "1px solid var(--line-strong)", fontSize: "0.58rem" }}>
+                            <button
+                                onClick={() => setResearchMode("quick")}
+                                style={{ padding: "4px 10px", background: researchMode === "quick" ? "var(--accent)" : "transparent", color: researchMode === "quick" ? "var(--bg-0)" : "var(--muted)", border: "none", cursor: "pointer", fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                            >Quick</button>
+                            <button
+                                onClick={() => setResearchMode("deep")}
+                                style={{ padding: "4px 10px", background: researchMode === "deep" ? "var(--accent)" : "transparent", color: researchMode === "deep" ? "var(--bg-0)" : "var(--muted)", border: "none", cursor: "pointer", fontFamily: "var(--font-mono)", fontWeight: 600 }}
+                            >Deep</button>
+                        </div>
+                        <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => { setResearchOpen(false); setResearchLoading(false); }}
+                            style={{ padding: "4px 10px", fontSize: "0.8rem" }}
+                        >✕</button>
+                    </div>
                 </div>
 
                 {/* Topic input */}
@@ -1231,7 +1364,7 @@ export default function EditorPage({ params }) {
                         )}
                         {researchSources > 0 && (
                             <div style={{ marginTop: "6px", color: "var(--text)", fontWeight: 600 }}>
-                                📄 {researchSources} sources found
+                                {researchSources} sources found
                             </div>
                         )}
                     </div>
@@ -1245,9 +1378,8 @@ export default function EditorPage({ params }) {
                 }}>
                     {!displayContent && !researchLoading && (
                         <div style={{ color: "var(--muted)", textAlign: "center", paddingTop: "40px", fontSize: "0.68rem" }}>
-                            <div style={{ fontSize: "2rem", marginBottom: "12px" }}>🔍</div>
-                            Enter a topic above to start a deep research session.
-                            <br />The agent will search multiple angles and synthesize findings.
+                            Enter a topic above to start.
+                            <br />{researchMode === "quick" ? "Quick mode returns bullet points." : "Deep mode searches multiple angles and synthesizes findings."}
                         </div>
                     )}
                     {researchLoading && !displayContent && (
@@ -1258,12 +1390,7 @@ export default function EditorPage({ params }) {
                             <div className="skeleton-line w40" />
                         </div>
                     )}
-                    {displayContent && (
-                        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                            {displayContent}
-                            {researchStreaming && <span className="ai-cursor">▊</span>}
-                        </div>
-                    )}
+                    {renderResults()}
                 </div>
 
                 {/* Actions */}
@@ -1334,6 +1461,7 @@ export default function EditorPage({ params }) {
             onChange: e => handleBlockInput(e, block),
             onKeyDown: e => handleBlockKeyDown(e, block),
             onFocus: () => setActiveBlockId(block.id),
+            onSelect: e => handleTextSelect(e, block),
             placeholder,
             rows: 1,
             style: { resize: "none" },
@@ -1363,7 +1491,7 @@ export default function EditorPage({ params }) {
                             onChange={e => { updateBlock(block.id, e.target.value); autoGrow(e.target); }}
                             onKeyDown={e => handleBlockKeyDown(e, block)}
                             onFocus={() => setActiveBlockId(block.id)}
-                            style={{ width: "100%", minHeight: "80px", padding: "16px", border: "none", background: "transparent", color: "#c5d0de", fontFamily: "var(--font-mono)", fontSize: "0.82rem", lineHeight: "1.65", outline: "none", resize: "none", overflow: "hidden", caretColor: "var(--accent)" }}
+                            style={{ width: "100%", minHeight: "80px", padding: "16px", border: "none", background: "transparent", fontFamily: "var(--font-mono)", fontSize: "0.82rem", lineHeight: "1.65", outline: "none", resize: "none", overflow: "hidden", caretColor: "var(--accent)" }}
                             placeholder="Write code…"
                         />
                     </div>
@@ -1485,9 +1613,14 @@ export default function EditorPage({ params }) {
                             style={{ resize: "none", position: "relative", zIndex: 10, background: "transparent" }}
                         />
                         {ghostText && activeBlockId === block.id && (
-                            <div className={`ghost-text ${cls}`}>
+                            <div
+                                className={`ghost-text ${cls} ${isMobile ? "ghost-text-mobile" : ""}`}
+                                onClick={isMobile ? () => acceptGhostText(block.id) : undefined}
+                            >
                                 <span style={{ visibility: "hidden" }}>{block.content}</span>
                                 <span>{ghostText}</span>
+                                {isMobile && <span className="ghost-tap-hint">tap to accept</span>}
+                                {!isMobile && <div className="ghost-hint">Tab ↹ accept · Esc dismiss</div>}
                             </div>
                         )}
                     </div>
@@ -1548,7 +1681,7 @@ export default function EditorPage({ params }) {
     return (
         <div className="editor-layout">
             {/* Editor topbar */}
-            <div className="editor-topbar">
+            <div className={`editor-topbar ${topbarHidden ? "topbar-hidden" : ""}`}>
                 <div className="editor-topbar-left">
                     <Link href="/write">← Dashboard</Link>
                     <span className="editor-status">
@@ -1585,49 +1718,33 @@ export default function EditorPage({ params }) {
             </div>
 
             {/* Editor canvas */}
-            <div className="editor-canvas">
+            <div className="editor-canvas" style={keyboardPadding ? { paddingBottom: keyboardPadding + 40 } : undefined}>
                 <textarea
                     className="editor-title-input"
-                    placeholder="Post title… (type / for AI)"
+                    placeholder="Post title…"
                     value={title}
                     rows={1}
                     onChange={e => { setTitle(e.target.value); setSaveStatus("unsaved"); autoGrow(e.target); }}
-                    onKeyDown={e => {
-                        if (e.key === "/") {
-                            e.preventDefault();
-                            setAiInline({ blockId: "__title__", action: null, fieldType: "title" });
-                        }
-                        if (e.key === "Enter") e.preventDefault();
-                    }}
+                    onKeyDown={e => { if (e.key === "Enter") e.preventDefault(); }}
                     ref={el => { if (el) autoGrow(el); }}
                 />
-                {/* AI panel for title */}
-                {aiInline && aiInline.blockId === "__title__" && renderAiInlinePanel("Title")}
 
                 <textarea
                     className="editor-subtitle-input"
-                    placeholder="Add a subtitle… (type / for AI)"
+                    placeholder="Add a subtitle…"
                     value={subtitle}
                     rows={1}
                     onChange={e => { setSubtitle(e.target.value); setSaveStatus("unsaved"); autoGrow(e.target); }}
-                    onKeyDown={e => {
-                        if (e.key === "/") {
-                            e.preventDefault();
-                            setAiInline({ blockId: "__subtitle__", action: null, fieldType: "subtitle" });
-                        }
-                        if (e.key === "Enter") e.preventDefault();
-                    }}
+                    onKeyDown={e => { if (e.key === "Enter") e.preventDefault(); }}
                     ref={el => { if (el) autoGrow(el); }}
                 />
-                {/* AI panel for subtitle */}
-                {aiInline && aiInline.blockId === "__subtitle__" && renderAiInlinePanel("Subtitle")}
 
                 {/* Blocks */}
                 {blocks.map((block) => (
                     <div
                         key={block.id}
                         className={`block ${showBorders ? "show-borders" : ""} ${focusMode && activeBlockId !== block.id ? "dimmed" : ""}`}
-                        draggable
+                        draggable={!isMobile}
                         onDragStart={() => handleDragStart(block.id)}
                         onDragOver={(e) => handleDragOver(e, block.id)}
                         onDragEnd={handleDragEnd}
@@ -1639,8 +1756,32 @@ export default function EditorPage({ params }) {
                         {/* Slash command menu */}
                         {slashMenu === block.id && renderSlashMenu(block)}
 
-                        {/* AI inline prompt */}
-                        {aiInline && aiInline.blockId === block.id && renderAiInlinePanel(block.type)}
+                        {/* AI custom prompt input */}
+                        {aiPromptBlockId === block.id && (
+                            <div className="ai-prompt-inline">
+                                <span style={{ color: "var(--accent)", fontSize: "0.68rem", fontWeight: 600 }}>✦</span>
+                                <input
+                                    className="ai-prompt-input"
+                                    placeholder="Tell AI what to do…"
+                                    value={aiPromptValue}
+                                    onChange={e => setAiPromptValue(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === "Enter") { e.preventDefault(); submitAiPrompt(block.id); }
+                                        if (e.key === "Escape") { e.preventDefault(); setAiPromptBlockId(null); setAiPromptValue(""); }
+                                    }}
+                                    autoFocus
+                                />
+                                <button className="btn btn-primary btn-sm" onClick={() => submitAiPrompt(block.id)} disabled={!aiPromptValue.trim()} style={{ padding: "4px 10px" }}>Go</button>
+                            </div>
+                        )}
+
+                        {/* AI generating indicator */}
+                        {aiGeneratingBlockId === block.id && (
+                            <div className="ai-generating-indicator">
+                                <span className="ai-generating-dot" />
+                                AI writing…
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
@@ -1653,19 +1794,25 @@ export default function EditorPage({ params }) {
                     <span>{getCharCount()} chars</span>
                 </div>
                 <div className="editor-footer-indicators">
-                    <div className="tone-badge">
+                    <div className="readability-badge">
                         <span className="dot" />
-                        {detectedTone}
-                    </div>
-                    <div className="seo-gauge">
-                        SEO
-                        <div className="seo-gauge-bar">
-                            <div className="seo-gauge-fill" style={{ width: `${seoScore}%` }} />
-                        </div>
-                        {seoScore}
+                        {getReadability().label}
                     </div>
                 </div>
             </div>
+
+            {/* Floating format toolbar */}
+            {formatToolbar && (
+                <div
+                    className="format-toolbar"
+                    style={{ top: formatToolbar.top, left: formatToolbar.left, position: "fixed" }}
+                >
+                    <button className="format-btn" onMouseDown={e => { e.preventDefault(); applyFormat("**"); }} title="Bold (Ctrl+B)"><strong>B</strong></button>
+                    <button className="format-btn" onMouseDown={e => { e.preventDefault(); applyFormat("*"); }} title="Italic (Ctrl+I)"><em>I</em></button>
+                    <button className="format-btn" onMouseDown={e => { e.preventDefault(); applyFormat("`"); }} title="Code">&lt;&gt;</button>
+                    <button className="format-btn" onMouseDown={e => { e.preventDefault(); applyLink(); }} title="Link (Ctrl+K)">&#128279;</button>
+                </div>
+            )}
 
             <CommandBar />
             <TitleGenModal />

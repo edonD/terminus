@@ -143,11 +143,42 @@ ${searchContext}`;
 }
 
 /* ═══════════════════════════════════════════════════
+   STREAM QUICK SYNTHESIS (bullet points)
+   ═══════════════════════════════════════════════════ */
+function streamQuickSynthesis(searchContext, topic, context, model) {
+    const systemPrompt = `You are a research assistant. Give a concise bullet-point summary. Return 10-15 bullet points covering the most important facts, statistics, and insights. Be specific — include numbers and sources. No section headers, just bullet points.`;
+
+    const userMessage = `Topic: "${topic}"
+
+${context ? `Writer's context:\n${context}\n\n` : ""}Search results:\n${searchContext}`;
+
+    if (model === "gpt") {
+        return openai.chat.completions.create({
+            model: "gpt-4.1-mini",
+            max_tokens: 1500,
+            stream: true,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userMessage },
+            ],
+        });
+    } else {
+        return anthropic.messages.stream({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1500,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userMessage }],
+        });
+    }
+}
+
+/* ═══════════════════════════════════════════════════
    POST HANDLER
    ═══════════════════════════════════════════════════ */
 export async function POST(request) {
     try {
-        const { topic, context, model } = await request.json();
+        const { topic, context, model, mode } = await request.json();
+        const isQuick = mode === "quick";
 
         if (!topic) {
             return Response.json({ error: "Missing topic" }, { status: 400 });
@@ -160,10 +191,16 @@ export async function POST(request) {
                 try {
                     // Step 1: Send status — generating queries
                     controller.enqueue(
-                        encoder.encode(`data: ${JSON.stringify({ status: "Generating search queries…" })}\n\n`)
+                        encoder.encode(`data: ${JSON.stringify({ status: isQuick ? "Searching…" : "Generating search queries…" })}\n\n`)
                     );
 
-                    const queries = await generateSearchQueries(topic, model || "claude");
+                    let queries;
+                    if (isQuick) {
+                        // Quick mode: 2 queries max, no gap analysis
+                        queries = [topic, `${topic} key facts statistics`];
+                    } else {
+                        queries = await generateSearchQueries(topic, model || "claude");
+                    }
 
                     // Step 2: Send queries to client
                     controller.enqueue(
@@ -178,7 +215,8 @@ export async function POST(request) {
                     const searchPromises = queries.map(q => searchSerper(q).catch(() => []));
                     const allSearchResults = await Promise.all(searchPromises);
                     const flatResults = allSearchResults.flat();
-                    const deduped = deduplicateResults(flatResults);
+                    let deduped = deduplicateResults(flatResults);
+                    if (isQuick) deduped = deduped.slice(0, 10); // Cap at 10 sources for quick mode
 
                     // Step 4: Send source count
                     controller.enqueue(
@@ -191,7 +229,9 @@ export async function POST(request) {
                         .join("\n\n");
 
                     // Step 6: Stream AI synthesis
-                    const stream = await streamSynthesis(searchContext, topic, context, model || "claude");
+                    const stream = isQuick
+                        ? await streamQuickSynthesis(searchContext, topic, context, model || "claude")
+                        : await streamSynthesis(searchContext, topic, context, model || "claude");
 
                     if (model === "gpt") {
                         for await (const chunk of stream) {
