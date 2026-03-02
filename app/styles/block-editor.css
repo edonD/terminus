@@ -376,16 +376,41 @@
 /* ── Slash menu category label ── */
 .ed-slash-category-label {
   padding: 8px 14px 4px;
-  font-size: 0.48rem;
+  font-size: 0.52rem;
   font-family: var(--font-mono);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
+.ed-slash-category-label:not(:first-child) {
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+  padding-top: 10px;
+}
+
 .ed-slash-body {
   max-height: 340px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.ed-slash-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ed-slash-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ed-slash-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.ed-slash-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .ed-slash-empty {

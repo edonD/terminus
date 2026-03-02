@@ -1630,6 +1630,14 @@ export default function EditorPage({ params }) {
     };
 
     /* ═══ SLASH MENU RENDERER ═══ */
+    const slashActiveRef = useRef(null);
+
+    useEffect(() => {
+        if (slashActiveRef.current) {
+            slashActiveRef.current.scrollIntoView({ block: "nearest" });
+        }
+    }, [slashIndex]);
+
     const renderSlashMenu = (block) => {
         const groups = getGroupedSlashCommands();
         const filtered = getFilteredSlashCommands();
@@ -1653,10 +1661,12 @@ export default function EditorPage({ params }) {
                                     <div className="ed-slash-category-label">{group.label}</div>
                                     {items.map(cmd => {
                                         const idx = flatIdx++;
+                                        const isActive = idx === slashIndex;
                                         return (
                                             <button
                                                 key={cmd.cmd || cmd.label}
-                                                className={`ed-slash-item ${idx === slashIndex ? "active" : ""}`}
+                                                ref={isActive ? slashActiveRef : null}
+                                                className={`ed-slash-item ${isActive ? "active" : ""}`}
                                                 onClick={() => executeSlashCommand(cmd, block.id)}
                                                 onMouseEnter={() => setSlashIndex(idx)}
                                             >

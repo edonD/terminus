@@ -553,7 +553,7 @@ body:has(.ed)::after {
 .ed-slash-menu {
   position: absolute;
   z-index: 200;
-  width: 260px;
+  width: 290px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   background: rgba(12, 18, 24, 0.95);
@@ -581,7 +581,7 @@ body:has(.ed)::after {
   justify-content: space-between;
   padding: 8px 14px;
   border-bottom: 1px solid var(--line);
-  font-size: 0.52rem;
+  font-size: 0.56rem;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -599,15 +599,16 @@ body:has(.ed)::after {
 .ed-slash-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 10px;
+  padding: 8px 14px;
   border: none;
+  border-left: 2px solid transparent;
   background: transparent;
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 0.74rem;
   cursor: pointer;
-  transition: background var(--speed-fast);
+  transition: background var(--speed-fast), color var(--speed-fast), border-color var(--speed-fast);
   width: 100%;
   text-align: left;
 }
@@ -616,6 +617,7 @@ body:has(.ed)::after {
 .ed-slash-item.active {
   background: var(--accent-soft);
   color: var(--accent);
+  border-left-color: var(--accent);
 }
 
 .ed-slash-icon {
@@ -627,7 +629,7 @@ body:has(.ed)::after {
   border: 1px solid var(--line);
   border-radius: 6px;
   font-size: 0.72rem;
-  background: rgba(228, 221, 210, 0.6);
+  background: rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 
@@ -643,12 +645,12 @@ body:has(.ed)::after {
 }
 
 .ed-slash-label {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 500;
 }
 
 .ed-slash-desc {
-  font-size: 0.56rem;
+  font-size: 0.6rem;
   color: var(--muted);
 }
 
