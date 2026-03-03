@@ -12,6 +12,40 @@ import EditorTopbar from "./components/EditorTopbar";
 import EditorFooter from "./components/EditorFooter";
 
 /* ═══════════════════════════════════════════════════
+   WORD-LEVEL DIFF (LCS-based)
+   ═══════════════════════════════════════════════════ */
+function computeWordDiff(original, rewritten) {
+    const a = original.split(/(\s+)/);
+    const b = rewritten.split(/(\s+)/);
+    const m = a.length, n = b.length;
+
+    // Build LCS table
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+    }
+
+    // Backtrack to produce diff
+    const result = [];
+    let i = m, j = n;
+    while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+            result.unshift({ type: "same", text: a[i - 1] });
+            i--; j--;
+        } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+            result.unshift({ type: "add", text: b[j - 1] });
+            j--;
+        } else {
+            result.unshift({ type: "remove", text: a[i - 1] });
+            i--;
+        }
+    }
+    return result;
+}
+
+/* ═══════════════════════════════════════════════════
    TONE & SLASH COMMAND DEFINITIONS
    ═══════════════════════════════════════════════════ */
 const SLASH_COMMANDS = [
@@ -39,6 +73,7 @@ const SLASH_COMMANDS = [
     { cmd: "/ai outline", label: "Generate outline", icon: "✦", action: "outline", desc: "Create a post outline", category: "ai" },
     { cmd: "/ai titles", label: "Suggest titles", icon: "✦", action: "titles", desc: "Generate title ideas", category: "ai" },
     { cmd: "/ai research", label: "Deep research", icon: "✦", action: "research", desc: "Research a topic in depth", category: "ai" },
+    { cmd: "/ai critique", label: "Critique draft", icon: "✦", action: "critique", desc: "Socratic critique of your writing", category: "ai" },
 ];
 
 const SLASH_CATEGORIES = [
@@ -52,6 +87,83 @@ const DEFAULT_METADATA = {
     "toggle": { expanded: false, body: "" },
     "callout": { emoji: "💡" },
 };
+
+const POST_TEMPLATES = [
+    {
+        name: "Blank",
+        icon: "○",
+        desc: "Start from scratch",
+        blocks: [{ id: "b1", type: "paragraph", content: "" }],
+    },
+    {
+        name: "Essay",
+        icon: "✎",
+        desc: "Thesis, argument, conclusion",
+        blocks: [
+            { id: "t1", type: "paragraph", content: "" },
+            { id: "t2", type: "heading", content: "Introduction" },
+            { id: "t3", type: "paragraph", content: "" },
+            { id: "t4", type: "heading", content: "The Argument" },
+            { id: "t5", type: "paragraph", content: "" },
+            { id: "t6", type: "heading", content: "Why It Matters" },
+            { id: "t7", type: "paragraph", content: "" },
+            { id: "t8", type: "heading", content: "Conclusion" },
+            { id: "t9", type: "paragraph", content: "" },
+        ],
+    },
+    {
+        name: "Tutorial",
+        icon: "▶",
+        desc: "Step-by-step guide",
+        blocks: [
+            { id: "t1", type: "paragraph", content: "" },
+            { id: "t2", type: "heading", content: "Prerequisites" },
+            { id: "t3", type: "paragraph", content: "" },
+            { id: "t4", type: "heading", content: "Step 1" },
+            { id: "t5", type: "paragraph", content: "" },
+            { id: "t6", type: "heading", content: "Step 2" },
+            { id: "t7", type: "paragraph", content: "" },
+            { id: "t8", type: "heading", content: "Step 3" },
+            { id: "t9", type: "paragraph", content: "" },
+            { id: "t10", type: "heading", content: "Wrapping Up" },
+            { id: "t11", type: "paragraph", content: "" },
+        ],
+    },
+    {
+        name: "Listicle",
+        icon: "≡",
+        desc: "Numbered insights or tips",
+        blocks: [
+            { id: "t1", type: "paragraph", content: "" },
+            { id: "t2", type: "heading", content: "1. " },
+            { id: "t3", type: "paragraph", content: "" },
+            { id: "t4", type: "heading", content: "2. " },
+            { id: "t5", type: "paragraph", content: "" },
+            { id: "t6", type: "heading", content: "3. " },
+            { id: "t7", type: "paragraph", content: "" },
+            { id: "t8", type: "heading", content: "4. " },
+            { id: "t9", type: "paragraph", content: "" },
+            { id: "t10", type: "heading", content: "5. " },
+            { id: "t11", type: "paragraph", content: "" },
+        ],
+    },
+    {
+        name: "Opinion",
+        icon: "◆",
+        desc: "Hot take with evidence",
+        blocks: [
+            { id: "t1", type: "callout", content: "", metadata: { emoji: "🔥" } },
+            { id: "t2", type: "heading", content: "The Conventional Wisdom" },
+            { id: "t3", type: "paragraph", content: "" },
+            { id: "t4", type: "heading", content: "Why It's Wrong" },
+            { id: "t5", type: "paragraph", content: "" },
+            { id: "t6", type: "heading", content: "The Evidence" },
+            { id: "t7", type: "paragraph", content: "" },
+            { id: "t8", type: "heading", content: "What Should Change" },
+            { id: "t9", type: "paragraph", content: "" },
+        ],
+    },
+];
 
 /* ═══════════════════════════════════════════════════
    STREAMING HELPER — calls /api/ai or /api/ai/research
@@ -144,11 +256,30 @@ export default function EditorPage({ params }) {
             }
             setPostLoaded(true);
             setSaveStatus("saved");
-            // Initialize undo history with loaded state
+            // Capture initial word count for session delta
+            const loadedTitle = existingPost.title || "";
+            const loadedSubtitle = existingPost.subtitle || "";
             const loadedBlocks = (existingPost.blocks && existingPost.blocks.length > 0) ? existingPost.blocks : [{ id: "b1", type: "paragraph", content: "" }];
+            const initialText = [loadedTitle, loadedSubtitle, ...loadedBlocks.map(b => b.content)].join(" ");
+            initialWordCountRef.current = initialText.split(/\s+/).filter(Boolean).length;
+            // Initialize undo history with loaded state
             historyRef.current = { stack: [{ blocks: JSON.parse(JSON.stringify(loadedBlocks)), title: existingPost.title || "", subtitle: existingPost.subtitle || "" }], index: 0, isUndoRedo: false };
         }
     }, [existingPost, isNew, postLoaded]);
+
+    // Set initial word count to 0 for new posts
+    useEffect(() => {
+        if (isNew && initialWordCountRef.current === null) {
+            initialWordCountRef.current = 0;
+        }
+    }, [isNew]);
+
+    // Show template picker for new empty posts
+    useEffect(() => {
+        if (isNew && blocks.length === 1 && !blocks[0].content && !title) {
+            setShowTemplatePicker(true);
+        }
+    }, []);
 
     const [focusMode, setFocusMode] = useState(false);
     const [showBorders, setShowBorders] = useState(false);
@@ -193,8 +324,25 @@ export default function EditorPage({ params }) {
     // Architect Phase 3
     const [showOutline, setShowOutline] = useState(false);
 
+    // Template picker
+    const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+
+    // Architect drag reorder
+    const [architectDragId, setArchitectDragId] = useState(null);
+    const [architectDragOverId, setArchitectDragOverId] = useState(null);
+
+    // Rewrite preview
+    const [rewritePreview, setRewritePreview] = useState(null); // { blockId, original, rewritten, streaming }
+
+    // Critique panel
+    const [critiqueOpen, setCritiqueOpen] = useState(false);
+    const [critiqueContent, setCritiqueContent] = useState("");
+    const [critiqueStreaming, setCritiqueStreaming] = useState("");
+    const [critiqueLoading, setCritiqueLoading] = useState(false);
+
     const blockRefs = useRef({});
     const historyRef = useRef({ stack: [], index: -1, isUndoRedo: false });
+    const initialWordCountRef = useRef(null);
     const slashMenuRef = useRef(slashMenu);
 
     // Keep refs in sync for keyboard shortcuts
@@ -269,13 +417,16 @@ export default function EditorPage({ params }) {
                     window.scrollBy({ top: scrollBy, behavior: "smooth" });
                 }, 350);
             } else {
-                // Desktop: slight delay then center
+                // Desktop: typewriter scrolling — position active block at 40% from top
                 setTimeout(() => {
-                    if (blockRefs.current[activeBlockId]) {
-                        blockRefs.current[activeBlockId].scrollIntoView({
-                            behavior: "smooth",
-                            block: "center",
-                        });
+                    const activeEl = blockRefs.current[activeBlockId];
+                    if (!activeEl) return;
+                    const rect = activeEl.getBoundingClientRect();
+                    const targetY = window.innerHeight * 0.4;
+                    const scrollBy = rect.top - targetY;
+                    // Dead zone: skip micro-scrolls under 50px
+                    if (Math.abs(scrollBy) > 50) {
+                        window.scrollBy({ top: scrollBy, behavior: "smooth" });
                     }
                 }, 50);
             }
@@ -304,6 +455,8 @@ export default function EditorPage({ params }) {
             if (e.key === "Escape") {
                 setAiPromptBlockId(null);
                 setAiPromptValue("");
+                setShowTemplatePicker(false);
+                setRewritePreview(null);
                 // slashMenu ESC is handled at the block level in handleBlockKeyDown
             }
         };
@@ -901,7 +1054,13 @@ export default function EditorPage({ params }) {
         if (cmd.action) {
             if (cmd.action === "research") {
                 updateBlock(blockId, textBefore);
+                setCritiqueOpen(false);
                 setResearchOpen(true);
+                return;
+            }
+            if (cmd.action === "critique") {
+                updateBlock(blockId, textBefore);
+                runCritique();
                 return;
             }
             updateBlock(blockId, textBefore);
@@ -949,6 +1108,35 @@ export default function EditorPage({ params }) {
        AI EXECUTION — Stream directly into new block
        ═══════════════════════════════════════════════════ */
     const streamAIIntoBlock = async (action, input, afterBlockId, customPromptText) => {
+        // Rewrite action: stream into diff preview instead of new block
+        if (action === "rewrite") {
+            const originalText = input || "";
+            setRewritePreview({ blockId: afterBlockId, original: originalText, rewritten: "", streaming: true });
+
+            const fieldType = getFieldType(afterBlockId);
+            let accumulated = "";
+
+            await streamAI({
+                action,
+                input: originalText,
+                context: getStructuredContext(),
+                fieldType,
+                fieldContent: originalText,
+                model: "claude",
+                onChunk: (text) => {
+                    accumulated += text;
+                    setRewritePreview(prev => prev ? { ...prev, rewritten: accumulated } : null);
+                },
+                onDone: () => {
+                    setRewritePreview(prev => prev ? { ...prev, streaming: false } : null);
+                },
+                onError: (err) => {
+                    setRewritePreview(prev => prev ? { ...prev, rewritten: `Error: ${err}`, streaming: false } : null);
+                },
+            });
+            return;
+        }
+
         const newId = addBlockAfter(afterBlockId, "paragraph", "");
         setAiGeneratingBlockId(newId);
 
@@ -1216,6 +1404,42 @@ export default function EditorPage({ params }) {
         setResearchOpen(false);
     };
 
+    /* ═══ CRITIQUE AGENT ═══ */
+    const runCritique = async () => {
+        const draftText = getDraftContext();
+        const words = draftText.split(/\s+/).filter(Boolean).length;
+        if (words < 50) {
+            setCritiqueContent("Write at least 50 words before requesting a critique.");
+            return;
+        }
+        setResearchOpen(false); // close research panel to avoid overlap
+        setCritiqueOpen(true);
+        setCritiqueLoading(true);
+        setCritiqueContent("");
+        setCritiqueStreaming("");
+
+        let accumulated = "";
+        await streamAI({
+            action: "critique",
+            input: draftText,
+            context: getStructuredContext(),
+            model: "claude",
+            onChunk: (text) => {
+                accumulated += text;
+                setCritiqueStreaming(accumulated);
+            },
+            onDone: () => {
+                setCritiqueContent(accumulated);
+                setCritiqueStreaming("");
+                setCritiqueLoading(false);
+            },
+            onError: (err) => {
+                setCritiqueContent(`Error: ${err}`);
+                setCritiqueLoading(false);
+            },
+        });
+    };
+
     const parseResearchSections = (text) => {
         if (!text) return [];
         const sections = [];
@@ -1412,8 +1636,68 @@ export default function EditorPage({ params }) {
     };
 
     /* ═══ ARCHITECT PANEL ═══ */
+    const reorderSection = (headingId, targetHeadingId, position) => {
+        setBlocksWithHistory(prev => {
+            const headingTypes = ["heading", "heading-h3", "heading-h4"];
+            const headingIdx = prev.findIndex(b => b.id === headingId);
+            if (headingIdx === -1) return prev;
+            const heading = prev[headingIdx];
+            const headingLevel = headingTypes.indexOf(heading.type);
+
+            // Find the section end: next heading of same or higher level
+            let sectionEnd = prev.length;
+            for (let i = headingIdx + 1; i < prev.length; i++) {
+                const t = headingTypes.indexOf(prev[i].type);
+                if (t !== -1 && t <= headingLevel) {
+                    sectionEnd = i;
+                    break;
+                }
+            }
+
+            // Extract section
+            const section = prev.slice(headingIdx, sectionEnd);
+            const rest = [...prev.slice(0, headingIdx), ...prev.slice(sectionEnd)];
+
+            // Find insertion point in rest
+            const targetIdx = rest.findIndex(b => b.id === targetHeadingId);
+            if (targetIdx === -1) return prev;
+
+            const insertAt = position === "before" ? targetIdx : targetIdx + 1;
+            rest.splice(insertAt, 0, ...section);
+            return rest;
+        });
+    };
+
     const ArchitectPanel = () => {
-        const headings = blocks.filter(b => b.type === "heading" || b.type === "heading-h3");
+        const headings = blocks.filter(b => b.type === "heading" || b.type === "heading-h3" || b.type === "heading-h4");
+        const levelMap = { "heading": 0, "heading-h3": 1, "heading-h4": 2 };
+        const badgeMap = { "heading": "H1", "heading-h3": "H2", "heading-h4": "H3" };
+
+        const handleArchitectDragStart = (e, id) => {
+            setArchitectDragId(id);
+            e.dataTransfer.effectAllowed = "move";
+        };
+
+        const handleArchitectDragOver = (e, id) => {
+            e.preventDefault();
+            if (architectDragId && architectDragId !== id) {
+                setArchitectDragOverId(id);
+            }
+        };
+
+        const handleArchitectDrop = (e, targetId) => {
+            e.preventDefault();
+            if (architectDragId && architectDragId !== targetId) {
+                reorderSection(architectDragId, targetId, "before");
+            }
+            setArchitectDragId(null);
+            setArchitectDragOverId(null);
+        };
+
+        const handleArchitectDragEnd = () => {
+            setArchitectDragId(null);
+            setArchitectDragOverId(null);
+        };
 
         return (
             <div className={`architect-panel ${showOutline ? "open" : ""}`}>
@@ -1434,7 +1718,13 @@ export default function EditorPage({ params }) {
                         {headings.map(h => (
                             <div
                                 key={h.id}
-                                className={`architect-item ${h.type === "heading" ? "architect-item-h2" : "architect-item-h3"} ${activeBlockId === h.id ? "active" : ""}`}
+                                className={`architect-item ${h.type === "heading" ? "architect-item-h2" : h.type === "heading-h3" ? "architect-item-h3" : "architect-item-h4"} ${activeBlockId === h.id ? "active" : ""} ${architectDragOverId === h.id ? "architect-drag-over" : ""}`}
+                                style={{ paddingLeft: levelMap[h.type] * 16 + "px" }}
+                                draggable
+                                onDragStart={e => handleArchitectDragStart(e, h.id)}
+                                onDragOver={e => handleArchitectDragOver(e, h.id)}
+                                onDrop={e => handleArchitectDrop(e, h.id)}
+                                onDragEnd={handleArchitectDragEnd}
                                 onClick={() => {
                                     if (blockRefs.current[h.id]) {
                                         blockRefs.current[h.id].scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1442,6 +1732,8 @@ export default function EditorPage({ params }) {
                                     }
                                 }}
                             >
+                                <span className="architect-drag-handle">⠿</span>
+                                <span className="architect-level-badge">{badgeMap[h.type]}</span>
                                 {h.content || <span style={{ opacity: 0.4, fontStyle: "italic" }}>Empty heading</span>}
                             </div>
                         ))}
@@ -1644,11 +1936,18 @@ export default function EditorPage({ params }) {
         // Compute a flat index for keyboard navigation
         let flatIdx = 0;
 
-        return (
-            <div className="ed-slash-menu">
+        const dismissMenu = () => { setSlashMenu(null); setSlashFilter(""); };
+
+        const menuContent = (
+            <div
+                className="ed-slash-menu"
+                style={isMobile && keyboardPadding > 0 ? { bottom: keyboardPadding } : undefined}
+            >
+                {isMobile && <div className="ed-slash-handle" />}
                 <div className="ed-slash-header">
                     <span>{slashFilter ? `Filter: ${slashFilter}` : "Commands"}</span>
-                    <kbd>↑↓ navigate</kbd>
+                    {!isMobile && <kbd>↑↓ navigate</kbd>}
+                    {isMobile && <button className="ed-slash-close" onClick={dismissMenu}>✕</button>}
                 </div>
                 <div className="ed-slash-body">
                     {filtered.length === 0 ? (
@@ -1668,12 +1967,12 @@ export default function EditorPage({ params }) {
                                                 ref={isActive ? slashActiveRef : null}
                                                 className={`ed-slash-item ${isActive ? "active" : ""}`}
                                                 onClick={() => executeSlashCommand(cmd, block.id)}
-                                                onMouseEnter={() => setSlashIndex(idx)}
+                                                onMouseEnter={!isMobile ? () => setSlashIndex(idx) : undefined}
                                             >
                                                 <span className="ed-slash-icon">{cmd.icon}</span>
                                                 <div>
                                                     <span className="ed-slash-label">{cmd.label}</span>
-                                                    <span className="ed-slash-desc">{cmd.desc}</span>
+                                                    {!isMobile && <span className="ed-slash-desc">{cmd.desc}</span>}
                                                 </div>
                                             </button>
                                         );
@@ -1682,6 +1981,158 @@ export default function EditorPage({ params }) {
                             );
                         })
                     )}
+                </div>
+            </div>
+        );
+
+        if (isMobile) {
+            return (
+                <>
+                    <div className="ed-slash-backdrop" onClick={dismissMenu} />
+                    {menuContent}
+                </>
+            );
+        }
+        return menuContent;
+    };
+
+    /* ═══ REWRITE PREVIEW ═══ */
+    const acceptRewrite = () => {
+        if (!rewritePreview) return;
+        updateBlock(rewritePreview.blockId, rewritePreview.rewritten);
+        setRewritePreview(null);
+    };
+
+    const rejectRewrite = () => {
+        setRewritePreview(null);
+    };
+
+    const RewritePreviewOverlay = () => {
+        if (!rewritePreview) return null;
+        const diff = computeWordDiff(rewritePreview.original, rewritePreview.rewritten);
+
+        return (
+            <div className="rewrite-overlay" onClick={rejectRewrite}>
+                <div className="rewrite-preview" onClick={e => e.stopPropagation()}>
+                    <h3 style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "4px", color: "var(--text)" }}>Rewrite Preview</h3>
+                    <p style={{ fontSize: "0.62rem", color: "var(--muted)", marginBottom: "8px" }}>
+                        {rewritePreview.streaming ? "Generating rewrite…" : "Review changes below. Green = added, red = removed."}
+                    </p>
+                    <div className="rewrite-diff">
+                        {diff.map((d, i) => (
+                            <span key={i} className={d.type === "add" ? "diff-add" : d.type === "remove" ? "diff-remove" : ""}>
+                                {d.text}
+                            </span>
+                        ))}
+                        {rewritePreview.streaming && <span className="ai-cursor">▊</span>}
+                    </div>
+                    {!rewritePreview.streaming && (
+                        <div className="rewrite-actions">
+                            <button className="btn btn-ghost btn-sm" onClick={rejectRewrite}>Reject</button>
+                            <button className="btn btn-primary btn-sm" onClick={acceptRewrite}>Accept</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    /* ═══ CRITIQUE PANEL ═══ */
+    const CritiquePanel = () => {
+        if (!critiqueOpen) return null;
+        const displayContent = critiqueStreaming || critiqueContent;
+
+        return (
+            <div style={{
+                position: "fixed", top: 0, right: 0, bottom: 0, width: "480px", maxWidth: "100vw",
+                background: "var(--bg-1)", borderLeft: "1px solid var(--line)",
+                zIndex: 1000, display: "flex", flexDirection: "column",
+                boxShadow: "-8px 0 32px rgba(0,0,0,0.3)",
+                animation: "slideInRight 0.2s ease-out",
+            }}>
+                {/* Header */}
+                <div style={{
+                    padding: "16px 20px", borderBottom: "1px solid var(--line)",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                    <div>
+                        <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>Socratic Critique</div>
+                        <div style={{ fontSize: "0.6rem", color: "var(--muted)", marginTop: "2px" }}>Honest feedback to sharpen your writing</div>
+                    </div>
+                    <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => { setCritiqueOpen(false); setCritiqueLoading(false); }}
+                        style={{ padding: "4px 10px", fontSize: "0.8rem" }}
+                    >✕</button>
+                </div>
+
+                {/* Content */}
+                <div style={{
+                    flex: 1, overflowY: "auto", padding: "16px 20px",
+                    fontSize: "0.74rem", lineHeight: 1.7, color: "var(--text)",
+                    fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                }}>
+                    {!displayContent && critiqueLoading && (
+                        <div style={{ paddingTop: "20px" }}>
+                            <div className="skeleton-line w80" />
+                            <div className="skeleton-line w60" />
+                            <div className="skeleton-line w80" />
+                            <div className="skeleton-line w40" />
+                        </div>
+                    )}
+                    {displayContent && (
+                        <>
+                            {displayContent}
+                            {critiqueStreaming && <span className="ai-cursor">▊</span>}
+                        </>
+                    )}
+                    {!displayContent && !critiqueLoading && (
+                        <div style={{ color: "var(--muted)", textAlign: "center", paddingTop: "40px", fontSize: "0.68rem" }}>
+                            Click "Re-critique" to analyze your draft.
+                        </div>
+                    )}
+                </div>
+
+                {/* Actions */}
+                {critiqueContent && !critiqueLoading && (
+                    <div style={{
+                        padding: "12px 20px", borderTop: "1px solid var(--line)",
+                        display: "flex", gap: "8px", justifyContent: "flex-end",
+                    }}>
+                        <button className="btn btn-ghost btn-sm" onClick={runCritique}>
+                            ↻ Re-critique
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    /* ═══ TEMPLATE PICKER ═══ */
+    const TemplatePicker = () => {
+        if (!showTemplatePicker) return null;
+        const selectTemplate = (template) => {
+            const blocksWithIds = template.blocks.map((b, i) => ({
+                ...b,
+                id: `b${Date.now()}${i}`,
+            }));
+            setBlocksWithHistory(() => blocksWithIds);
+            setShowTemplatePicker(false);
+        };
+        return (
+            <div className="template-overlay" onClick={() => setShowTemplatePicker(false)}>
+                <div className="template-modal" onClick={e => e.stopPropagation()}>
+                    <h3 style={{ fontSize: "0.92rem", fontWeight: 700, marginBottom: "4px", color: "var(--text)" }}>Start with a template</h3>
+                    <p style={{ fontSize: "0.68rem", color: "var(--muted)", marginBottom: "20px" }}>Choose a structure for your post, or start blank.</p>
+                    <div className="template-grid">
+                        {POST_TEMPLATES.map(t => (
+                            <div key={t.name} className="template-card" onClick={() => selectTemplate(t)}>
+                                <div className="template-card-icon">{t.icon}</div>
+                                <div className="template-card-name">{t.name}</div>
+                                <div className="template-card-desc">{t.desc}</div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         );
@@ -1711,6 +2162,9 @@ export default function EditorPage({ params }) {
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={() => setResearchOpen(true)}>
                         🔍 Research
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setResearchOpen(false); runCritique(); }}>
+                        ✦ Critique
                     </button>
                     <button className="btn btn-ghost btn-sm" onClick={generateTitles} title="⌘T">
                         ✦ Titles
@@ -1799,7 +2253,7 @@ export default function EditorPage({ params }) {
             {/* Editor footer */}
             <div className="editor-footer">
                 <div className="editor-footer-stats">
-                    <span>{getWordCount()} words</span>
+                    <span>{getWordCount()} words{initialWordCountRef.current !== null && getWordCount() - initialWordCountRef.current > 0 ? ` (+${getWordCount() - initialWordCountRef.current} this session)` : ""}</span>
                     <span>{getReadTime()} read</span>
                     <span>{getCharCount()} chars</span>
                 </div>
@@ -1827,7 +2281,10 @@ export default function EditorPage({ params }) {
             <CommandBar />
             <TitleGenModal />
             <ResearchPanel />
+            <CritiquePanel />
             <ArchitectPanel />
+            <TemplatePicker />
+            <RewritePreviewOverlay />
         </div>
     );
 }

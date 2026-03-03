@@ -2052,6 +2052,48 @@ body.focus-mode-active {
   border-left: 1px solid var(--line-strong);
 }
 
+.architect-item-h4 {
+  padding-left: 32px;
+  font-size: 0.72rem;
+  border-left: 1px solid var(--line);
+}
+
+.architect-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.architect-drag-handle {
+  opacity: 0;
+  cursor: grab;
+  font-size: 0.6rem;
+  color: var(--line-strong);
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.architect-item:hover .architect-drag-handle {
+  opacity: 1;
+}
+
+.architect-level-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.architect-drag-over {
+  border-top: 2px solid var(--accent) !important;
+}
+
 /* Adjust layout when architect is open to prevent overlapping text */
 body.architect-open .editor-layout {
   padding-right: 280px;
