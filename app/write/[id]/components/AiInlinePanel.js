@@ -75,7 +75,12 @@ export default function AiInlinePanel({
             {/* Streaming */}
             {aiLoading && (
                 <div style={{ marginTop: "10px" }}>
-                    <div style={{ color: "var(--accent)", fontSize: "0.68rem", marginBottom: "6px" }}>✦ {aiStreaming ? "Streaming…" : "Thinking…"}</div>
+                    <div style={{ color: "var(--accent)", fontSize: "0.68rem", marginBottom: "6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>✦ {aiStreaming ? "Streaming…" : "Thinking…"}</span>
+                        {aiStreaming && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(aiStreaming)} style={{ padding: "2px 8px", fontSize: "0.6rem" }}>Copy</button>
+                        )}
+                    </div>
                     {aiStreaming ? (
                         <div className="ai-result" style={{ opacity: 0.85 }}>{aiStreaming}<span className="ai-cursor">▊</span></div>
                     ) : (<><div className="skeleton-line w80" style={{ marginTop: "4px" }} /><div className="skeleton-line w60" /></>)}
@@ -88,6 +93,7 @@ export default function AiInlinePanel({
                     {aiResult}
                     <div className="ai-result-actions">
                         <button className="btn btn-primary btn-sm" onClick={insertAiResult}>↵ Insert</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard.writeText(aiResult)}>Copy</button>
                         <button className="btn btn-ghost btn-sm" onClick={() => executeAI(aiInline?.action || "rewrite", aiResult)}>↻ Retry</button>
                         <button className="btn btn-ghost btn-sm" onClick={onClose}>Dismiss</button>
                     </div>

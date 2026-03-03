@@ -402,8 +402,9 @@ export default function EditorPage({ params }) {
         return () => window.removeEventListener("scroll", onScroll);
     }, [isMobile]);
 
-    // Typewriter Scrolling
+    // Typewriter Scrolling — disabled during AI streaming to prevent scroll hijacking
     useEffect(() => {
+        if (aiGeneratingBlockId || rewritePreview?.streaming || critiqueStreaming) return;
         if (activeBlockId && blockRefs.current[activeBlockId]) {
             const el = blockRefs.current[activeBlockId];
             if (isMobile && window.visualViewport) {
@@ -431,17 +432,26 @@ export default function EditorPage({ params }) {
                 }, 50);
             }
         }
-    }, [activeBlockId, isMobile]);
+    }, [activeBlockId, isMobile, aiGeneratingBlockId, rewritePreview?.streaming, critiqueStreaming]);
 
-    // Auto-grow all textareas on mount / block changes
+    // Auto-grow textareas on mount / block changes
+    // During AI streaming, only grow the generating block (avoid layout thrash on all textareas)
     useEffect(() => {
+        if (aiGeneratingBlockId) {
+            const el = blockRefs.current[aiGeneratingBlockId];
+            if (el && el.tagName === "TEXTAREA") {
+                el.style.height = "auto";
+                el.style.height = el.scrollHeight + "px";
+            }
+            return;
+        }
         Object.values(blockRefs.current).forEach(el => {
             if (el && el.tagName === "TEXTAREA") {
                 el.style.height = "auto";
                 el.style.height = el.scrollHeight + "px";
             }
         });
-    }, [blocks]);
+    }, [blocks, aiGeneratingBlockId]);
 
     // Global keyboard shortcuts
     useEffect(() => {
@@ -2029,6 +2039,9 @@ export default function EditorPage({ params }) {
                     {!rewritePreview.streaming && (
                         <div className="rewrite-actions">
                             <button className="btn btn-ghost btn-sm" onClick={rejectRewrite}>Reject</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => {
+                                navigator.clipboard.writeText(rewritePreview.rewritten);
+                            }}>Copy</button>
                             <button className="btn btn-primary btn-sm" onClick={acceptRewrite}>Accept</button>
                         </div>
                     )}
@@ -2059,11 +2072,20 @@ export default function EditorPage({ params }) {
                         <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)" }}>Socratic Critique</div>
                         <div style={{ fontSize: "0.6rem", color: "var(--muted)", marginTop: "2px" }}>Honest feedback to sharpen your writing</div>
                     </div>
-                    <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => { setCritiqueOpen(false); setCritiqueLoading(false); }}
-                        style={{ padding: "4px 10px", fontSize: "0.8rem" }}
-                    >✕</button>
+                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                        {(critiqueContent || critiqueStreaming) && (
+                            <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => navigator.clipboard.writeText(critiqueContent || critiqueStreaming)}
+                                style={{ padding: "4px 10px", fontSize: "0.68rem" }}
+                            >Copy</button>
+                        )}
+                        <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => { setCritiqueOpen(false); setCritiqueLoading(false); }}
+                            style={{ padding: "4px 10px", fontSize: "0.8rem" }}
+                        >✕</button>
+                    </div>
                 </div>
 
                 {/* Content */}
