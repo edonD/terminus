@@ -340,6 +340,13 @@ export default function EditorPage({ params }) {
     const [critiqueStreaming, setCritiqueStreaming] = useState("");
     const [critiqueLoading, setCritiqueLoading] = useState(false);
 
+    // Tone checker
+    const [toneMode, setToneMode] = useState(false);
+    const [toneTags, setToneTags] = useState({}); // { blockId: { tone, loading } }
+
+    // Preview mode
+    const [previewMode, setPreviewMode] = useState(false);
+
     const blockRefs = useRef({});
     const historyRef = useRef({ stack: [], index: -1, isUndoRedo: false });
     const initialWordCountRef = useRef(null);
@@ -1450,6 +1457,90 @@ export default function EditorPage({ params }) {
         });
     };
 
+    /* ═══════════════════════════════════════════════════
+       TONE CHECKER — analyze each block's tone
+       ═══════════════════════════════════════════════════ */
+    const runToneCheck = async () => {
+        const textBlocks = blocks.filter(b => b.content?.trim() && ["paragraph", "heading", "heading-h3", "heading-h4", "quote", "callout"].includes(b.type));
+        if (textBlocks.length === 0) return;
+
+        // Mark all as loading
+        const initial = {};
+        textBlocks.forEach(b => { initial[b.id] = { tone: "", loading: true }; });
+        setToneTags(initial);
+
+        // Send all blocks in one request
+        const blockTexts = textBlocks.map(b => `[BLOCK ${b.id}]: ${b.content}`).join("\n\n");
+        let accumulated = "";
+        await streamAI({
+            action: "tone",
+            input: blockTexts,
+            context: getStructuredContext(),
+            model: "claude",
+            onChunk: (text) => { accumulated += text; },
+            onDone: () => {
+                // Parse response: expect lines like "BLOCK b1: conversational, confident"
+                const results = {};
+                accumulated.split("\n").forEach(line => {
+                    const match = line.match(/^BLOCK\s+(\S+):\s*(.+)/i);
+                    if (match) {
+                        results[match[1]] = { tone: match[2].trim(), loading: false };
+                    }
+                });
+                setToneTags(prev => {
+                    const updated = { ...prev };
+                    Object.keys(updated).forEach(id => {
+                        updated[id] = results[id] || { tone: "—", loading: false };
+                    });
+                    return updated;
+                });
+            },
+            onError: () => {
+                setToneTags(prev => {
+                    const updated = { ...prev };
+                    Object.keys(updated).forEach(id => { updated[id] = { tone: "error", loading: false }; });
+                    return updated;
+                });
+            },
+        });
+    };
+
+    const toggleToneMode = () => {
+        if (toneMode) {
+            setToneMode(false);
+            setToneTags({});
+        } else {
+            setToneMode(true);
+            runToneCheck();
+        }
+    };
+
+    /* ═══════════════════════════════════════════════════
+       PREVIEW MODE — generate HTML from blocks
+       ═══════════════════════════════════════════════════ */
+    const getPreviewHtml = () => {
+        const fmt = (text) => parseInlineMarkdown(text);
+        const rawLines = blocks
+            .map(b => {
+                if (!b.content && b.type !== "divider") return "";
+                if (b.type === "heading") return `<h2>${fmt(b.content)}</h2>`;
+                if (b.type === "heading-h3") return `<h3>${fmt(b.content)}</h3>`;
+                if (b.type === "heading-h4") return `<h4>${fmt(b.content)}</h4>`;
+                if (b.type === "quote") return `<blockquote>${fmt(b.content)}</blockquote>`;
+                if (b.type === "code") return `<pre><code>${b.content}</code></pre>`;
+                if (b.type === "divider") return `<hr />`;
+                if (b.type === "bullet-list") return `<li class="bullet">${fmt(b.content)}</li>`;
+                if (b.type === "number-list") return `<li class="numbered">${fmt(b.content)}</li>`;
+                if (b.type === "todo") return `<div class="todo-item${b.metadata?.checked ? " checked" : ""}"><span class="todo-checkbox">${b.metadata?.checked ? "☑" : "☐"}</span>${fmt(b.content)}</div>`;
+                if (b.type === "toggle") return `<details${b.metadata?.expanded ? " open" : ""}><summary>${fmt(b.content)}</summary>${b.metadata?.body || ""}</details>`;
+                if (b.type === "callout") return `<div class="callout"><span class="callout-emoji">${b.metadata?.emoji || "💡"}</span><span>${fmt(b.content)}</span></div>`;
+                if (b.type === "image") return b.content ? `<figure><img src="${b.content}" alt="" />${b.metadata?.caption ? `<figcaption>${b.metadata.caption}</figcaption>` : ""}</figure>` : "";
+                return `<p>${fmt(b.content)}</p>`;
+            })
+            .filter(Boolean);
+        return wrapLists(rawLines).join("\n");
+    };
+
     const parseResearchSections = (text) => {
         if (!text) return [];
         const sections = [];
@@ -2235,6 +2326,12 @@ export default function EditorPage({ params }) {
                     <button className="btn btn-ghost btn-sm" onClick={() => { setResearchOpen(false); runCritique(); }}>
                         ✦ Critique
                     </button>
+                    <button className={`btn btn-ghost btn-sm ${toneMode ? "btn-active" : ""}`} onClick={toggleToneMode}>
+                        {toneMode ? "◈ Tone ON" : "◇ Tone"}
+                    </button>
+                    <button className={`btn btn-ghost btn-sm ${previewMode ? "btn-active" : ""}`} onClick={() => setPreviewMode(p => !p)}>
+                        {previewMode ? "◉ Preview ON" : "○ Preview"}
+                    </button>
                     <button className="btn btn-ghost btn-sm" onClick={generateTitles} title="⌘T">
                         ✦ Titles
                     </button>
@@ -2315,9 +2412,47 @@ export default function EditorPage({ params }) {
                                 AI writing…
                             </div>
                         )}
+
+                        {/* Tone badge */}
+                        {toneMode && toneTags[block.id] && (
+                            <div className="tone-badge">
+                                {toneTags[block.id].loading ? (
+                                    <span className="tone-loading">analyzing…</span>
+                                ) : (
+                                    <span className="tone-label">{toneTags[block.id].tone}</span>
+                                )}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
+
+            {/* Preview overlay */}
+            {previewMode && (
+                <div className="preview-overlay">
+                    <div className="preview-overlay-header">
+                        <span className="preview-overlay-title">Preview</span>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setPreviewMode(false)}>✕ Close</button>
+                    </div>
+                    <div className="preview-overlay-content">
+                        <div className="post-page">
+                            <div className="post-header">
+                                <h1>{title || "Untitled"}</h1>
+                                {subtitle && <p className="post-header-sub">{subtitle}</p>}
+                                <div className="post-card-meta">
+                                    <span>{new Date().toISOString().split("T")[0].replace(/-/g, ".")}</span>
+                                    <span>·</span>
+                                    <span>{getReadTime()} read</span>
+                                </div>
+                                <div className="post-header-rule" />
+                            </div>
+                            <div className="post-content-wrapper">
+                                <div className="post-body" dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Editor footer */}
             <div className="editor-footer">
