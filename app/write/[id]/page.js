@@ -63,7 +63,7 @@ const SLASH_COMMANDS = [
     { cmd: "/code", label: "Code Block", icon: "</>", type: "code", desc: "Syntax-highlighted code", category: "basic" },
     { cmd: "/divider", label: "Divider", icon: "—", type: "divider", desc: "Horizontal separator line", category: "basic" },
     // Media
-    { cmd: "/image", label: "Image", icon: "▣", type: "image", desc: "Embed an image from URL", category: "media" },
+    { cmd: "/image", label: "Image", icon: "▣", type: "image", desc: "Embed an image (upload or URL)", category: "media" },
     // AI
     { cmd: "/ai", label: "AI Co-Pilot", icon: "✦", type: "ai", desc: "Open AI assistant panel", category: "ai" },
     { cmd: "/ai continue", label: "Continue writing", icon: "✦", action: "continue", desc: "AI continues your text", category: "ai" },
@@ -1780,8 +1780,13 @@ export default function EditorPage({ params }) {
                             <div className="code-block-dots"><span /><span /><span /></div>
                             <span className="code-block-lang">code</span>
                             <button
+                                className="block-copy-btn"
+                                onClick={e => { navigator.clipboard.writeText(block.content); const btn = e.currentTarget; btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy", 1200); }}
+                                title="Copy code"
+                            >Copy</button>
+                            <button
                                 onClick={() => deleteBlock(block.id)}
-                                style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.72rem", padding: "2px 6px", borderRadius: "4px", transition: "color 0.15s" }}
+                                style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.72rem", padding: "2px 6px", borderRadius: "4px", transition: "color 0.15s" }}
                                 onMouseEnter={e => e.target.style.color = "#ff6b6b"}
                                 onMouseLeave={e => e.target.style.color = "var(--muted)"}
                                 title="Delete code block"
@@ -1802,6 +1807,11 @@ export default function EditorPage({ params }) {
             case "quote":
                 return (
                     <div className="block-quote">
+                        <button
+                            className="block-copy-btn block-copy-btn-corner"
+                            onClick={e => { navigator.clipboard.writeText(block.content); const btn = e.currentTarget; btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy", 1200); }}
+                            title="Copy quote"
+                        >Copy</button>
                         <textarea {...txProps("Write a quote…")} style={{ fontStyle: "italic", resize: "none" }} />
                     </div>
                 );
@@ -1869,6 +1879,11 @@ export default function EditorPage({ params }) {
             case "callout":
                 return (
                     <div className="block-callout">
+                        <button
+                            className="block-copy-btn block-copy-btn-corner"
+                            onClick={e => { navigator.clipboard.writeText(block.content); const btn = e.currentTarget; btn.textContent = "Copied!"; setTimeout(() => btn.textContent = "Copy", 1200); }}
+                            title="Copy callout"
+                        >Copy</button>
                         <span className="block-callout-emoji">{block.metadata?.emoji || "💡"}</span>
                         <textarea {...txProps("Type something…")} />
                     </div>
@@ -1877,19 +1892,51 @@ export default function EditorPage({ params }) {
             case "image":
                 return (
                     <div className="block-image-upload">
-                        <input
-                            ref={el => blockRefs.current[block.id] = el}
-                            type="text"
-                            className="block-content"
-                            value={block.content}
-                            onChange={e => { updateBlock(block.id, e.target.value); setSaveStatus("unsaved"); }}
-                            onKeyDown={e => handleBlockKeyDown(e, block)}
-                            onFocus={() => setActiveBlockId(block.id)}
-                            placeholder="Paste image URL…"
-                            style={{ resize: "none" }}
-                        />
-                        {block.content && (
-                            <img className="block-image-preview" src={block.content} alt="" />
+                        {!block.content ? (
+                            <div className="block-image-options">
+                                <input
+                                    ref={el => blockRefs.current[block.id] = el}
+                                    type="text"
+                                    className="block-content"
+                                    value={block.content}
+                                    onChange={e => { updateBlock(block.id, e.target.value); setSaveStatus("unsaved"); }}
+                                    onKeyDown={e => handleBlockKeyDown(e, block)}
+                                    onFocus={() => setActiveBlockId(block.id)}
+                                    placeholder="Paste image URL…"
+                                    style={{ resize: "none" }}
+                                />
+                                <label className="block-image-upload-btn">
+                                    Upload file
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: "none" }}
+                                        onChange={e => {
+                                            const file = e.target.files?.[0];
+                                            if (!file) return;
+                                            if (file.size > 5 * 1024 * 1024) {
+                                                alert("Image must be under 5 MB");
+                                                return;
+                                            }
+                                            const reader = new FileReader();
+                                            reader.onload = () => {
+                                                updateBlock(block.id, reader.result);
+                                                setSaveStatus("unsaved");
+                                            };
+                                            reader.readAsDataURL(file);
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                        ) : (
+                            <div className="block-image-preview-wrap">
+                                <img className="block-image-preview" src={block.content} alt="" />
+                                <button
+                                    className="block-image-remove"
+                                    onClick={() => { updateBlock(block.id, ""); setSaveStatus("unsaved"); }}
+                                    title="Remove image"
+                                >✕</button>
+                            </div>
                         )}
                     </div>
                 );

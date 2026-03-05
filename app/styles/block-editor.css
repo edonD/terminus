@@ -368,10 +368,104 @@
   font-size: 0.72rem;
 }
 
+.block-image-options {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.block-image-options input {
+  flex: 1;
+}
+
+.block-image-upload-btn {
+  padding: 8px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  background: rgba(228, 221, 210, 0.02);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.block-image-upload-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.block-image-preview-wrap {
+  position: relative;
+  display: inline-block;
+}
+
 .block-image-preview {
   max-width: 100%;
   border-radius: var(--radius);
   border: 1px solid var(--line);
+}
+
+.block-image-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.block-image-preview-wrap:hover .block-image-remove {
+  opacity: 1;
+}
+
+/* ── Copy button for bordered containers ── */
+.block-copy-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: auto;
+}
+
+.block-copy-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.block-copy-btn-corner {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.block-quote,
+.block-callout {
+  position: relative;
+}
+
+.block-quote:hover .block-copy-btn-corner,
+.block-callout:hover .block-copy-btn-corner {
+  opacity: 1;
 }
 
 /* ── Slash menu category label ── */
